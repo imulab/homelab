@@ -3,3 +3,6 @@ kind: Kustomization
 resources:
 - gotk-components.yaml
 - gotk-sync.yaml
+- ../ingress-nginx-system/sync.yaml
+- ../sealed-secrets-system/sync.yaml
+- ../cert-manager-system/sync.yaml
