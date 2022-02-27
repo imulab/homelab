@@ -16,8 +16,8 @@ spec:
           config:
             region: ""
             accessKeySecretRef:
-              name: alidns
+              name: aliyun
               key: access-key
             secretKeySecretRef:
-              name: alidns
+              name: aliyun
               key: secret-key
