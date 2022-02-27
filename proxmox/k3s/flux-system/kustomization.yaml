@@ -7,3 +7,4 @@ resources:
 - ../sealed-secrets-system/sync.yaml
 - ../cert-manager/sync.yaml
 - ../cert-manager-alidns-webhook/sync.yaml
+- ../dashy/sync.yaml
