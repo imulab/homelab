@@ -5,3 +5,4 @@ resources:
 - gotk-sync.yaml
 - ../ingress-nginx-system/sync.yaml
 - ../sealed-secrets-system/sync.yaml
+- ../cert-manager/sync.yaml
