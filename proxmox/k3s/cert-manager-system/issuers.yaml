@@ -4,27 +4,3 @@ metadata:
   name: self
 spec:
   selfSigned: {}
----
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt
-spec:
-  acme:
-    email: imu@elan-vision.com
-    server: https://acme-v02.api.letsencrypt.org/directory
-    privateKeySecretRef:
-      name: letsencrypt-account-key
-    solvers:
-    - dns01:
-        webhook:
-          groupName: "acme.elan-vision.com"
-          solverName: alidns
-          config:
-            region: ""
-            accessKeySecretRef:
-              name: aliyun
-              key: access-key
-            secretKeySecretRef:
-              name: aliyun
-              key: secret-key

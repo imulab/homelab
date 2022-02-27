@@ -1,0 +1,12 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: sealed-secrets-system
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./proxmox/k3s/sealed-secrets-system
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
