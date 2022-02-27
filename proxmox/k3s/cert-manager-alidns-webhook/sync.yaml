@@ -1,0 +1,16 @@
+
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta2
+kind: Kustomization
+metadata:
+  name: cert-manager-alidns-webhook
+  namespace: flux-system
+spec:
+  interval: 10m0s
+  path: ./proxmox/k3s/cert-manager-alidns-webhook
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  dependsOn:
+    - name: sealed-secrets-system
+    - name: cert-manager-system

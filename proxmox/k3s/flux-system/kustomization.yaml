@@ -6,3 +6,4 @@ resources:
 - ../ingress-nginx-system/sync.yaml
 - ../sealed-secrets-system/sync.yaml
 - ../cert-manager-system/sync.yaml
+- ../cert-manager-alidns-webhook/sync.yaml
