@@ -1,0 +1,17 @@
+# Bootstrap stack: creates the shared external docker network used by the
+# Caddy edge and every backend stack. Deploy this ONCE on a fresh box before
+# any service stack that references `proxy` as external: true.
+#
+# See truenas/apps/README.md ("Bootstrap") and decision #5.
+services:
+  network-init:
+    image: alpine:3.20
+    container_name: network-init
+    restart: "no"
+    networks:
+      proxy:
+    command: ["echo", "proxy network ready"]
+
+networks:
+  proxy:
+    driver: bridge

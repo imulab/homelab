@@ -1,0 +1,15 @@
+# Seed/global Caddy config. caddy-docker-proxy imports this file and appends
+# auto-generated routes from container labels at runtime.
+#
+# The wildcard + apex cert is issued once via Cloudflare DNS-01 (decision #4).
+
+{
+	# Email Let's Encrypt associates with your account.
+	email {$LETSENCRYPT_EMAIL:<set in Dockhand or remove if not ready>}
+
+	# Issue a single cert covering the wildcard + apex.
+	acme_dns cloudflare {$CF_API_TOKEN}
+}
+
+# caddy-docker-proxy auto-merges backend routes below this point from labels
+# like: caddy=index.absurdlab.dev, caddy.reverse_proxy="{{upstreams}}".
