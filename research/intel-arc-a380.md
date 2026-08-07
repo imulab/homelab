@@ -72,8 +72,15 @@ The three claims, scored:
   is in the `linux-firmware` package and loads **automatically** (no
   `enable_guc=2/3` modprobe dance needed on modern kernels) — but it is the one
   thing to grep `dmesg` for if transcodes fail.
-- **Resizable BAR should be enabled in the host BIOS.** Arc cards perform
-  poorly (and can misbehave) without ReBAR. This is a one-time BIOS toggle.
+- **Resizable BAR (ReBAR) — NOT required for A380, NOT available on the operator's board.**
+  Two findings that together neutralize this item: (a) per Jellyfin's own Intel docs, ReBAR is
+  **mandatory only for ARC B-series** (Battlemage), or the media driver crashes; the A380
+  (A-series/Alchemist) works without it at a ~10% transcode throughput cost; (b) the operator's
+  board is a **Supermicro X11SSM-F**, whose X11-platform BIOS predates ReBAR adoption and has no
+  native setting for it (would require a ReBarUEFI BIOS mod — not worth the brick risk on a
+  production storage box). Action: skip the BIOS mod; ensure **Above 4G Decoding** is on
+  (Advanced → PnP/PCI Configuration), which IS exposed on the X11 and is the only related toggle
+  that actually matters here. Net: A380 + QSV transcoding is fully functional without ReBAR.
 - **Permissions, not drivers, are the empirical unknown.** A recurring A380-on-
   25.10 failure mode is the app/container lacking write access to the render
   node. After install, run the `vainfo` check (point 4) — if it lists profiles,
@@ -498,10 +505,33 @@ submission) or `=3` (GuC + HuC) in `/etc/modprobe.d/i915.conf`.
   `linux-firmware` is current. On a 25.10 fresh install this should already be
   the case.
 
-**D. Resizable BAR — enable in BIOS (one-time toggle).** Arc cards are designed
-  assuming ReBAR is on; with ReBAR off, performance degrades and some operations
-  misbehave. **Action:** enter the host BIOS, enable "Resizable BAR" / "Above
-  4G Decoding" (the P400 did not need this, so it may currently be off).
+**D. Resizable BAR (ReBAR) — NOT required for A380, NOT available on the operator's
+  board (updated after board-ID verification).** Two findings that neutralize this
+  item, which was originally written as "enable ReBAR in BIOS":
+
+  1. **ReBAR is mandatory only for ARC B-series (Battlemage), per Jellyfin's own
+     docs.** Verbatim: *"Resizable-BAR is only mandatory for hardware acceleration
+     on ARC B-series cards, or the media driver will crash the transcoder."* The
+     A380 is A-series (Alchemist); it transcodes without ReBAR with no crash and
+     no instability, at roughly a **10% throughput reduction** (Jellyfin
+     hardware-selection docs, LTT community benchmarks). AV1 encode/decode remain
+     functional. For a homelab transcoding one stream at a time, the 10% is noise.
+
+  2. **The operator's board (Supermicro X11SSM-F) has no native ReBAR setting.**
+     The X11 platform predates ReBAR adoption; Supermicro never exposed it in the
+     X11 BIOS line. Enabling it would require a third-party BIOS mod
+     ([ReBarUEFI](https://github.com/xCuri0/ReBarUEFI) — DXE-driver injection +
+     reflash, with a documented X11 patching guide at
+     [discussion #299](https://github.com/xCuri0/ReBarUEFI/discussions/299)).
+     **Recommended: do NOT mod the BIOS on a production storage box** — the brick
+     risk is not justified by a 10% transcode throughput gain on a single-stream
+     homelab workload.
+
+  **The one related toggle that does exist on the X11SSM-F and does matter:**
+  **Above 4G Decoding**, under **Advanced → PnP/PCI Configuration → Above 4G
+  Decoding** — must be **Enabled** for the GPU's memory-mapped regions to work at
+  all (independent of ReBAR). On a 64-bit UEFI system running TrueNAS this is
+  almost certainly already on, but confirm it.
 
 **E. Host GPU vs iGPU collision — pick the right render node.** If the TrueNAS
 box also has an Intel iGPU (common on the Celeron/N100-class boards people run
@@ -568,7 +598,7 @@ Sources: [TechPowerUp — Arc A380 specs](https://www.techpowerup.com/gpu-specs/
   prior research (#15) and TrueNAS docs.
 - **Caveats that are confirmed facts but variant-dependent (flag, do not
   block):** power connector and slot width (5A, 5B) — these depend on which
-  exact A380 SKU the operator buys. ReBAR (5D) and the iGPU-collision render-
+  exact A380 SKU the operator buys. The iGPU-collision render-
   node pick (5E) are one-time config checks after install.
 - **Lower confidence / community-sourced:** the specific A380-on-25.10 forum
   reports are mixed but **all of them are permissions/passthrough failures,
@@ -576,7 +606,7 @@ Sources: [TechPowerUp — Arc A380 specs](https://www.techpowerup.com/gpu-specs/
   layer works; the failure layer that broke the P400 does not exist for Intel).
 - **Cannot confirm from docs alone (→ on-box after purchase):** whether the
   operator's *specific* TrueNAS chassis/PSU has a free PCIe power cable and a
-  two-slot opening; whether ReBAR is currently on; whether the host will expose
+  two-slot opening; whether the host will expose
   the A380 as `renderD128` or `renderD129`. All are cheap to check and do not
   require the card to be in hand for the first two.
 
