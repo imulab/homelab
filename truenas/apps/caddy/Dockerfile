@@ -15,4 +15,10 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 # Required to start the caddy-docker-proxy controller alongside the Caddy
 # server. Without this, the base image runs `caddy run` and the label-discovery
 # module never activates — Caddy serves nothing and watches no containers.
-CMD ["caddy", "docker-proxy"]
+#
+# --caddyfile-path tells the controller to EXTEND this base Caddyfile with
+# sites generated from container labels. Without it the controller runs from
+# an empty base, dropping the global acme_dns cloudflare block — so Caddy
+# falls back to tls-alpn/http challenges (which fail on a LAN-only domain).
+CMD ["caddy", "docker-proxy", \
+     "--caddyfile-path=/etc/caddy/Caddyfile"]
