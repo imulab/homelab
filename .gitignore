@@ -1,0 +1,6 @@
+# Real env files hold secret values and never belong in git. Use .env.example
+# to document what a stack needs, then set the value in Dockhand's Stack editor
+# env-var panel (key-icon toggle). See decision #8.
+.env
+.env.*
+!.env.example

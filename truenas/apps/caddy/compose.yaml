@@ -1,0 +1,43 @@
+# Caddy edge stack.
+#
+# Terminates Let's Encrypt TLS for *.absurdlab.dev (+ apex) via Cloudflare
+# DNS-01, and reverse-proxies to backend stacks by reading their Docker labels
+# (caddy-docker-proxy). Backends self-declare their route via caddy.* labels;
+# this stack stays untouched when adding a service.
+#
+# The custom image bundles the Cloudflare DNS plugin (for DNS-01) and the
+# caddy-docker-proxy module (for label-based discovery), neither of which the
+# official caddy image includes.
+#
+# Decisions: #4 (DNS & TLS), #5 (layout), #6 (this prototype), #8 (secrets).
+services:
+  caddy:
+    build:
+      context: .
+    image: caddy-cloudflare-docker-proxy:local
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Cloudflare API token for DNS-01. Value is NOT in git — set it in
+      # Dockhand's Stack editor env-var panel (key-icon toggle). See #8.
+      - CF_API_TOKEN=${CF_API_TOKEN:?CF_API_TOKEN must be set in Dockhand}
+    volumes:
+      # Base/seed Caddyfile holding global ACME + Cloudflare DNS config.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # docker socket so caddy-docker-proxy discovers backends by label.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - proxy
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  proxy:
+    external: true
