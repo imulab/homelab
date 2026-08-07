@@ -1,0 +1,34 @@
+# Dashy dashboard stack, served at index.absurdlab.dev through Caddy.
+#
+# The route is declared via caddy.* labels; caddy-docker-proxy reads them and
+# generates the reverse-proxy route. No edits to the caddy/ stack are needed.
+#
+# Decisions: #5 (layout), #6 (Caddy/caddy-docker-proxy), #7 (this prototype).
+services:
+  dashy:
+    image: lissy93/dashy:latest
+    container_name: dashy
+    restart: unless-stopped
+    # No host port published: Caddy is the sole entry point (TLS terminates
+    # there). Caddy reaches dashy as dashy:8080 over the shared proxy network.
+    volumes:
+      - ./conf.yml:/app/user-data/conf.yml:ro
+    environment:
+      - NODE_ENV=production
+    # Route self-declaration for caddy-docker-proxy. {{upstreams 8080}} resolves
+    # to dashy:8080 (Dashy's internal port) on the shared proxy network.
+    labels:
+      caddy: index.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+    healthcheck:
+      test: ["CMD", "node", "/app/services/healthcheck.js"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
