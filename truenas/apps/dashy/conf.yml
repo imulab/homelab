@@ -16,50 +16,50 @@ sections:
   - name: Network
     icon: mdi-router-network
     items:
-      - title: UniFi Console
+      - title: UniFi
         description: UniFi network controller
         url: http://192.168.10.1
-        icon: mdi-access-point-network
-      - title: Photonicat Admin
+        icon: sh-ubiquiti-unifi
+      - title: Photonicat
         description: OpenWRT gateway admin UI
         url: http://192.168.20.2
-        icon: mdi-router-wireless
+        icon: sh-openwrt
 
   - name: TrueNAS
     icon: mdi-server
     items:
-      - title: TrueNAS (HTTP)
+      - title: HTTP
         description: TrueNAS web UI over HTTP
         url: http://192.168.20.11:8080
-        icon: mdi-nas
-      - title: TrueNAS (HTTPS)
+        icon: sh-truenas-scale
+      - title: HTTPS
         description: TrueNAS web UI over HTTPS
         url: https://192.168.20.11:8443
-        icon: mdi-nas
-      - title: TrueNAS IPMI
+        icon: sh-truenas-scale
+      - title: IPMI
         description: TrueNAS IPMI / BMC
         url: https://192.168.20.10
-        icon: mdi-server-network
+        icon: si-supermicro
       - title: Dockhand
         description: Container & stack management
         url: http://192.168.20.11:30328
-        icon: mdi-docker
+        icon: sh-dockhand
 
   - name: TrueNAS Backup
     icon: mdi-server
     items:
-      - title: TrueNAS Backup (HTTP)
+      - title: HTTP
         description: Backup NAS web UI over HTTP
         url: http://192.168.10.11:8080
-        icon: mdi-nas
-      - title: TrueNAS Backup (HTTPS)
+        icon: sh-truenas-scale
+      - title: HTTPS
         description: Backup NAS web UI over HTTPS
         url: https://192.168.10.11:8443
-        icon: mdi-nas
-      - title: TrueNAS Backup IPMI
+        icon: sh-truenas-scale
+      - title: IPMI
         description: Backup NAS IPMI / BMC
         url: http://192.168.10.10
-        icon: mdi-server-network
+        icon: si-supermicro
 
   - name: Services
     icon: mdi-bookmark-multiple
@@ -67,4 +67,4 @@ sections:
       - title: Dashy
         description: This dashboard
         url: https://index.absurdlab.dev
-        icon: mdi-view-dashboard
+        icon: sh-dashy
