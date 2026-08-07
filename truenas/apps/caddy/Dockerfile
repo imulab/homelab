@@ -12,3 +12,7 @@ RUN xcaddy build \
 
 FROM caddy:2-alpine
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+# Required to start the caddy-docker-proxy controller alongside the Caddy
+# server. Without this, the base image runs `caddy run` and the label-discovery
+# module never activates — Caddy serves nothing and watches no containers.
+CMD ["caddy", "docker-proxy"]

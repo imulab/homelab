@@ -24,6 +24,10 @@ services:
       # Cloudflare API token for DNS-01. Value is NOT in git — set it in
       # Dockhand's Stack editor env-var panel (key-icon toggle). See #8.
       - CF_API_TOKEN=${CF_API_TOKEN:?CF_API_TOKEN must be set in Dockhand}
+      # Pin the ingress network so caddy-docker-proxy reliably treats `proxy`
+      # as the network it resolves backends on. Auto-detection "fails on some
+      # scenarios" per the docs; pinning removes that flakiness.
+      - CADDY_INGRESS_NETWORKS=proxy
     volumes:
       # Base/seed Caddyfile holding global ACME + Cloudflare DNS config.
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
