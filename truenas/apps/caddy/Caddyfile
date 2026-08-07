@@ -4,10 +4,12 @@
 # The wildcard + apex cert is issued once via Cloudflare DNS-01 (decision #4).
 
 {
-	# Email Let's Encrypt associates with your account.
-	email {$LETSENCRYPT_EMAIL:<set in Dockhand or remove if not ready>}
+	# Optional: email Let's Encrypt associates with your account (for expiry
+	# notices). Caddy works without it. To enable, uncomment and set the
+	# LETSENCRYPT_EMAIL env var in Dockhand's stack env-var panel.
+	# email {$LETSENCRYPT_EMAIL}
 
-	# Issue a single cert covering the wildcard + apex.
+	# Issue a single cert covering the wildcard + apex via Cloudflare DNS-01.
 	acme_dns cloudflare {$CF_API_TOKEN}
 }
 
