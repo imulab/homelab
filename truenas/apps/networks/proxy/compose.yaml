@@ -14,4 +14,8 @@ services:
 
 networks:
   proxy:
+    # Pin the literal name so Docker Compose doesn't prefix it with the project
+    # name (which would yield e.g. proxy-network_proxy). Backends reference this
+    # network as external: true, so the name must be stable and project-agnostic.
+    name: proxy
     driver: bridge
