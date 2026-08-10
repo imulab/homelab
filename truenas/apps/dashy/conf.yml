@@ -18,7 +18,7 @@ sections:
     items:
       - title: UniFi
         description: UniFi network controller
-        url: http://192.168.10.1
+        url: http://192.168.20.1
         icon: sh-ubiquiti-unifi
       - title: Photonicat
         description: OpenWRT gateway admin UI
@@ -50,15 +50,15 @@ sections:
     items:
       - title: HTTP
         description: Backup NAS web UI over HTTP
-        url: http://192.168.10.11:8080
+        url: http://192.168.20.21:8080
         icon: sh-truenas-scale
       - title: HTTPS
         description: Backup NAS web UI over HTTPS
-        url: https://192.168.10.11:8443
+        url: https://192.168.20.21:8443
         icon: sh-truenas-scale
       - title: IPMI
         description: Backup NAS IPMI / BMC
-        url: http://192.168.10.10
+        url: http://192.168.20.20
         icon: si-supermicro
 
   - name: Services
