@@ -88,6 +88,57 @@ interrupts proxied connections:
 /etc/init.d/passwall restart
 ```
 
+## Troubleshoot Caddy DNS-01 behind Passwall
+
+An ACME propagation timeout does not necessarily mean that the Cloudflare API
+token or DNS update failed. A challenge record can be visible through a public
+resolver while Caddy still receives an empty TXT answer through the local DNS
+path. Without a certificate, HTTPS reaches Caddy but the TLS handshake fails
+with an internal-error alert before the request reaches the backend.
+
+Check the same active challenge from outside and inside the Caddy container:
+
+```sh
+dig +short TXT _acme-challenge.<name>.absurdlab.dev @1.1.1.1
+```
+
+```sh
+docker exec caddy nslookup -type=TXT \
+  _acme-challenge.<name>.absurdlab.dev 127.0.0.11
+docker exec caddy nslookup -type=TXT \
+  _acme-challenge.<name>.absurdlab.dev 1.1.1.1
+```
+
+Run the checks while Caddy logs `trying to solve challenge`; Caddy removes the
+temporary TXT record after an attempt finishes. If the public query sees the
+record but both container queries are empty, inspect Photonicat:
+
+```sh
+uci get 'passwall.@global[0].dns_redirect'
+iptables-save -t nat 2>/dev/null | grep -E -- 'PSW_DNS|--dport 53'
+```
+
+With Passwall `dns_redirect=1`, its `PSW_DNS` chain redirects all LAN TCP and
+UDP port-53 traffic to Passwall's private resolver. This includes packets
+addressed explicitly to `1.1.1.1`, so Caddy's global `tls_resolvers` setting
+cannot bypass the router-level redirect by itself. Adding resolver addresses
+to Passwall's Direct List only changes proxy routing; it does not exempt those
+queries from `PSW_DNS`.
+
+Choose the DNS policy deliberately:
+
+- Setting Passwall **DNS Redirect** to off allows explicitly addressed public
+  DNS queries to escape interception. Clients using Photonicat as their DNS
+  server still use its DNS path, but clients that hardcode port-53 resolvers
+  can now bypass Passwall DNS enforcement.
+- Keeping **DNS Redirect** on requires a persistent, source-specific firewall
+  exemption for the Caddy host (`192.168.20.11`) and its explicit resolvers.
+  A one-off rule is insufficient because Passwall rebuilds its chains.
+
+Keep `tls_resolvers 1.1.1.1 1.0.0.1` in Caddy after either policy is applied,
+then verify `certificate obtained successfully` in the Caddy logs and test the
+served certificate from a client.
+
 ## Bootstrap on a fresh box
 
 1. In Dockhand, deploy the `networks/proxy` stack (creates the `proxy` network).

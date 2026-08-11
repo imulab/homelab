@@ -68,3 +68,11 @@ sections:
         description: This dashboard
         url: https://index.absurdlab.dev
         icon: sh-dashy
+      - title: Jellyfin
+        description: Jellyfin media server via Caddy
+        url: https://media.absurdlab.dev
+        icon: sh-jellyfin
+      - title: Jellyfin Direct
+        description: Jellyfin direct LAN fallback
+        url: http://192.168.20.11:8096
+        icon: sh-jellyfin
