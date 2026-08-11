@@ -15,4 +15,8 @@
 	# per labeled domain. Acceptable at homelab scale; revisit if rate limits
 	# bite. See decision #4 for the original (wildcard) intent.
 	acme_dns cloudflare {$CF_API_TOKEN}
+
+	# Bypass split/local DNS when checking DNS-01 TXT propagation. Caddy's
+	# container resolver may otherwise cache an empty answer from Passwall.
+	tls_resolvers 1.1.1.1 1.0.0.1
 }

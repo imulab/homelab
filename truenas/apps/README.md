@@ -46,9 +46,47 @@ truth; nothing auto-deploys — decision #2).
      caddy.reverse_proxy: "{{upstreams}}"
    ```
 5. Add a photonicat dnsmasq entry: `<name>.absurdlab.dev` → Caddy box LAN IP
-   (manual; decision #4). Note: Clash Verge TUN mode on a client must be off
-   for homelab domains to resolve, pending a bypass rule.
+   (manual; decision #4), then refresh Passwall's DNS process as described
+   below. Note: Clash Verge TUN mode on a client must be off for homelab
+   domains to resolve, pending a bypass rule.
 6. Push, then Deploy the stack in Dockhand.
+
+## Refresh Photonicat DNS after adding a hostname
+
+Photonicat runs two dnsmasq processes while Passwall DNS redirection is
+enabled: OpenWrt's main dnsmasq and Passwall's private `dnsmasq_default`.
+Passwall redirects port 53 to its private process. LuCI's **Save & Apply**
+regenerates `/tmp/hosts` and reloads the main process, but the private process
+can retain its previous hosts snapshot. Restarting only the main dnsmasq does
+not fix that stale state.
+
+After adding or changing a hostname in **Network → DHCP and DNS → Hostnames**:
+
+1. Click **Save & Apply**.
+2. SSH to Photonicat and send SIGHUP to the current Passwall dnsmasq PID. Do
+   not hardcode the PID; it changes whenever Passwall restarts:
+   ```sh
+   passwall_dns_pid="$(
+     ps w | awk '/\/dnsmasq_default / {print $1; exit}'
+   )"
+   test -n "$passwall_dns_pid" && kill -HUP "$passwall_dns_pid"
+   ```
+   SIGHUP clears that process's DNS cache and reloads its `addn-hosts` data
+   without interrupting proxy connections.
+3. Verify the actual port-53 path on Photonicat, then verify from a client:
+   ```sh
+   nslookup -type=A <name>.absurdlab.dev 127.0.0.1
+   ```
+   ```sh
+   dig <name>.absurdlab.dev
+   ```
+
+If the targeted reload fails, restart Passwall as a fallback; this briefly
+interrupts proxied connections:
+
+```sh
+/etc/init.d/passwall restart
+```
 
 ## Bootstrap on a fresh box
 
