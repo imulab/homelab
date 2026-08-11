@@ -1,0 +1,47 @@
+# Jellyfin media server with Intel Arc A380 hardware acceleration.
+#
+# Host-specific, non-secret values are supplied through Dockhand from the
+# matching .env.example. Jellyfin account setup remains an interactive
+# first-run task and requires no deploy-time credentials.
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:10.11.11
+    container_name: jellyfin
+    restart: unless-stopped
+    user: "${JELLYFIN_UID:?JELLYFIN_UID must be set}:${JELLYFIN_GID:?JELLYFIN_GID must be set}"
+    group_add:
+      - "${JELLYFIN_RENDER_GID:?JELLYFIN_RENDER_GID must be set}"
+    devices:
+      - "${JELLYFIN_CARD_DEVICE:?JELLYFIN_CARD_DEVICE must be set}:/dev/dri/card1"
+      - "${JELLYFIN_RENDER_DEVICE:?JELLYFIN_RENDER_DEVICE must be set}:/dev/dri/renderD128"
+    ports:
+      - "${JELLYFIN_BIND_ADDRESS:?JELLYFIN_BIND_ADDRESS must be set}:${JELLYFIN_PUBLISHED_PORT:-8096}:8096"
+    volumes:
+      - "${JELLYFIN_CONFIG_PATH:?JELLYFIN_CONFIG_PATH must be set}:/config"
+      - "${JELLYFIN_CACHE_PATH:?JELLYFIN_CACHE_PATH must be set}:/cache"
+      - "${JELLYFIN_TRANSCODE_PATH:?JELLYFIN_TRANSCODE_PATH must be set}:/cache/transcodes"
+      - "${MOVIES_ESSENTIALS_PATH:?MOVIES_ESSENTIALS_PATH must be set}:/media/movies/essentials:ro"
+      - "${MOVIES_EPHEMERAL_PATH:?MOVIES_EPHEMERAL_PATH must be set}:/media/movies/ephemeral:ro"
+      - "${TV_ESSENTIALS_PATH:?TV_ESSENTIALS_PATH must be set}:/media/tv/essentials:ro"
+      - "${TV_EPHEMERAL_PATH:?TV_EPHEMERAL_PATH must be set}:/media/tv/ephemeral:ro"
+      - "${FAMILY_CLIPS_PATH:?FAMILY_CLIPS_PATH must be set}:/media/family/clips:ro"
+      - "${FAMILY_PHOTOS_PATH:?FAMILY_PHOTOS_PATH must be set}:/media/family/photos:ro"
+    labels:
+      caddy: media.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 8096}}"
+    # Mirrors the supported healthcheck shipped by the pinned official image.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          curl --noproxy 'localhost' -Lk -fsS "$${HEALTHCHECK_URL}" || exit 1
+      interval: 30s
+      timeout: 30s
+      retries: 3
+      start_period: 10s
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
