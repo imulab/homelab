@@ -5,6 +5,7 @@
 # first-run task and requires no deploy-time credentials.
 services:
   jellyfin:
+    # The pinned official image supplies its supported /health probe.
     image: jellyfin/jellyfin:10.11.11
     container_name: jellyfin
     restart: unless-stopped
@@ -29,16 +30,6 @@ services:
     labels:
       caddy: media.absurdlab.dev
       caddy.reverse_proxy: "{{upstreams 8096}}"
-    # Mirrors the supported healthcheck shipped by the pinned official image.
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          curl --noproxy 'localhost' -Lk -fsS "$${HEALTHCHECK_URL}" || exit 1
-      interval: 30s
-      timeout: 30s
-      retries: 3
-      start_period: 10s
     networks:
       - proxy
 
