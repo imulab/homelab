@@ -76,3 +76,11 @@ sections:
         description: Jellyfin direct LAN fallback
         url: http://192.168.20.11:8096
         icon: sh-jellyfin
+      - title: Immich
+        description: Immich photo backup via Caddy
+        url: https://immich.absurdlab.dev
+        icon: sh-immich
+      - title: Immich Direct
+        description: Immich direct LAN fallback
+        url: http://192.168.20.11:2283
+        icon: sh-immich

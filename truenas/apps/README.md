@@ -48,7 +48,10 @@ truth; nothing auto-deploys — decision #2).
 5. Add a photonicat dnsmasq entry: `<name>.absurdlab.dev` → Caddy box LAN IP
    (manual; decision #4), then refresh Passwall's DNS process as described
    below. Note: Clash Verge TUN mode on a client must be off for homelab
-   domains to resolve, pending a bypass rule.
+   domains to resolve, pending a bypass rule. Dual-stack clients may prefer
+   the UDM's IPv6 RDNSS resolver over the Photonicat's IPv4-only DNS and then
+   miss the hijack entirely; per-device manual DNS 192.168.20.2 is the
+   accepted workaround (durable fix deferred).
 6. Push, then Deploy the stack in Dockhand.
 
 ## Refresh Photonicat DNS after adding a hostname
