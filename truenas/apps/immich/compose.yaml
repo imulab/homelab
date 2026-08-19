@@ -1,0 +1,112 @@
+# Immich photo and video backup, four services per the official v3.1.0
+# release compose, adapted to the apps conventions (see README.md) and the
+# wayfinder decisions in .scratch/immich/.
+#
+# Deviations from the upstream release asset, all deliberate:
+# - ports: upstream publishes 2283 on all interfaces; we bind the LAN IP only
+#   (Jellyfin pattern) and reach the server through Caddy on the proxy network.
+# - restart: unless-stopped (house rule) instead of upstream's always.
+# - user: explicit dedicated identity 3002/3002 (house identity pattern,
+#   decision 09). If any image misbehaves non-root at first deploy, drop the
+#   user: lines and let the writable roots be root-owned instead.
+# - storage split: upstream mounts one UPLOAD_LOCATION at /data; we shadow-mount
+#   the default /data subpaths so regenerable thumbs/encoded-video and durable
+#   profile/backups land on their own datasets (decision 09, official
+#   custom-locations guide). library/ and upload/ are never split upstream-wise.
+# - ML image: -openvino variant with /dev/dri passthrough (decision 08); if the
+#   GPU is invisible on this kernel the ML container silently falls back to CPU,
+#   which is accepted. Verify `Available OpenVINO devices` in the logs.
+# - model-cache as a host bind on the cache dataset instead of a named volume.
+# - version tags pinned exactly (decision from ticket 10); upstream
+#   digest-pins redis/database, we pin the versioned tags deliberately.
+
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:?IMMICH_VERSION must be set}
+    container_name: immich-server
+    restart: unless-stopped
+    user: "${IMMICH_UID:?IMMICH_UID must be set}:${IMMICH_GID:?IMMICH_GID must be set}"
+    ports:
+      # Direct LAN fallback; Caddy serves the canonical
+      # https://immich.absurdlab.dev route over the proxy network.
+      - "${IMMICH_BIND_ADDRESS:?IMMICH_BIND_ADDRESS must be set}:${IMMICH_PUBLISHED_PORT:-2283}:2283"
+    volumes:
+      # Irreplaceable originals (library/) and upload staging on the essentials
+      # tree, protected by its existing snapshots and replication.
+      - "${UPLOAD_LOCATION:?UPLOAD_LOCATION must be set}:/data"
+      # Regenerable derivatives on the disposable cache dataset.
+      - "${THUMBS_PATH:?THUMBS_PATH must be set}:/data/thumbs"
+      - "${ENCODED_VIDEO_PATH:?ENCODED_VIDEO_PATH must be set}:/data/encoded-video"
+      # Durable app-side state on the config dataset: profile pictures and the
+      # built-in daily pg_dump backups (the DB restore point under our split).
+      - "${PROFILE_PATH:?PROFILE_PATH must be set}:/data/profile"
+      - "${BACKUP_PATH:?BACKUP_PATH must be set}:/data/backups"
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_DATABASE_NAME: ${DB_DATABASE_NAME:-immich}
+      # Real client IPs in logs; covers the docker bridge pools the shared
+      # proxy network lives in. Cosmetic: auth and uploads do not depend on it.
+      IMMICH_TRUSTED_PROXIES: ${IMMICH_TRUSTED_PROXIES:-172.16.0.0/12}
+      TZ: ${TZ:-Etc/UTC}
+    labels:
+      caddy: immich.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 2283}}"
+    networks:
+      - default
+      - proxy
+    depends_on:
+      - redis
+      - database
+    healthcheck:
+      disable: false
+
+  immich-machine-learning:
+    # OpenVINO build per decision 08; tag form is <version>-openvino.
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:?IMMICH_VERSION must be set}-openvino
+    container_name: immich-ml
+    restart: unless-stopped
+    user: "${IMMICH_UID:?IMMICH_UID must be set}:${IMMICH_GID:?IMMICH_GID must be set}"
+    group_add:
+      # Host render group for /dev/dri access; 107 on this SCALE box.
+      - "${IMMICH_RENDER_GID:?IMMICH_RENDER_GID must be set}"
+    devices:
+      # Same stat-confirmed nodes the Jellyfin stack passes through.
+      - "${IMMICH_CARD_DEVICE:?IMMICH_CARD_DEVICE must be set}:/dev/dri/card1"
+      - "${IMMICH_RENDER_DEVICE:?IMMICH_RENDER_DEVICE must be set}:/dev/dri/renderD128"
+    volumes:
+      # ML models re-download if lost; cache dataset is the right home.
+      - "${MODEL_CACHE_PATH:?MODEL_CACHE_PATH must be set}:/cache"
+    environment:
+      # Each worker duplicates all models in memory; one is the safe default
+      # when sharing the GPU with Jellyfin (decision 08).
+      MACHINE_LEARNING_WORKERS: "1"
+      TZ: ${TZ:-Etc/UTC}
+    healthcheck:
+      disable: false
+
+  redis:
+    image: docker.io/valkey/valkey:9
+    container_name: immich-redis
+    restart: unless-stopped
+    # Queue-only: no volume, losing it drops queued jobs, never data.
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+  database:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-postgres
+    restart: unless-stopped
+    user: "${IMMICH_UID:?IMMICH_UID must be set}:${IMMICH_GID:?IMMICH_GID must be set}"
+    volumes:
+      - "${DB_DATA_LOCATION:?DB_DATA_LOCATION must be set}:/var/lib/postgresql/data"
+    environment:
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    shm_size: 128mb
+    healthcheck:
+      disable: false
+
+networks:
+  proxy:
+    external: true
