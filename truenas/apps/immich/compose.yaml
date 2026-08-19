@@ -101,7 +101,12 @@ services:
     volumes:
       - "${DB_DATA_LOCATION:?DB_DATA_LOCATION must be set}:/var/lib/postgresql/data"
     environment:
-      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      # Mirror upstream exactly: the image's first-init scripts key off the
+      # POSTGRES_* names, not DB_*. The database is only created when initdb
+      # runs on an empty data dir, so changing these later requires a re-init.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_DB: ${DB_DATABASE_NAME:-immich}
       POSTGRES_INITDB_ARGS: --data-checksums
     shm_size: 128mb
     healthcheck:
