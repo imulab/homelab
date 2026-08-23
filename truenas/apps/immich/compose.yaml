@@ -81,6 +81,15 @@ services:
       # Each worker duplicates all models in memory; one is the safe default
       # when sharing the GPU with Jellyfin (decision 08).
       MACHINE_LEARNING_WORKERS: "1"
+      # The service runs as a numeric non-root user without a passwd entry, so
+      # libraries otherwise resolve their caches to unwritable paths under /.
+      # Keep all regenerable ML state on the existing writable cache dataset.
+      HOME: /cache
+      XDG_CACHE_HOME: /cache/.cache
+      XDG_CONFIG_HOME: /cache/.config
+      HF_HOME: /cache/huggingface
+      HF_XET_CACHE: /cache/huggingface/xet
+      MPLCONFIGDIR: /cache/matplotlib
       TZ: ${TZ:-Etc/UTC}
     healthcheck:
       disable: false
