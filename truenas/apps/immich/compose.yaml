@@ -48,6 +48,9 @@ services:
       # Real client IPs in logs; covers the docker bridge pools the shared
       # proxy network lives in. Cosmetic: auth and uploads do not depend on it.
       IMMICH_TRUSTED_PROXIES: ${IMMICH_TRUSTED_PROXIES:-172.16.0.0/12}
+      # Initial admin registration is no longer needed after setup. Keep the
+      # endpoint closed even if the database is accidentally reset or missing.
+      IMMICH_ALLOW_SETUP: "false"
       TZ: ${TZ:-Etc/UTC}
     labels:
       caddy: immich.absurdlab.dev
