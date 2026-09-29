@@ -24,6 +24,10 @@ sections:
         description: OpenWRT gateway admin UI
         url: http://192.168.20.2
         icon: sh-openwrt
+      - title: Zashboard
+        description: Proxy management dashboard
+        url: http://192.168.20.2:9090/ui/zashboard/#/proxies
+        icon: sh-openwrt
 
   - name: TrueNAS
     icon: mdi-server
