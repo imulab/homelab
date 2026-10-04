@@ -88,3 +88,11 @@ sections:
         description: Immich direct LAN fallback
         url: http://192.168.20.11:2283
         icon: sh-immich
+      - title: IPMIDeck
+        description: BMC monitoring dashboard via Caddy
+        url: https://ipmideck.absurdlab.dev
+        icon: mdi-developer-board
+      - title: IPMIDeck Direct
+        description: IPMIDeck direct LAN fallback
+        url: http://192.168.20.11:6233
+        icon: mdi-developer-board
