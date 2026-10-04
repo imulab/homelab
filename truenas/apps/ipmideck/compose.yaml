@@ -1,0 +1,54 @@
+# IPMIDeck — self-hosted dashboard for the two Supermicro BMCs (sensors,
+# power, fans, SEL, FRU) over IPMI 2.0.
+#
+# Adapted to the apps conventions (see README.md), with deliberate
+# deviations from upstream's docker-compose.yml:
+# - networking: bridge on the external proxy network, NOT upstream's
+#   network_mode: host. RMCP+ is unicast UDP request/response and each poll
+#   is a short-lived ipmitool run, so NAT'd bridge egress reaches the BMCs
+#   on UDP 623 with a stable source IP (the box's LAN address); upstream
+#   itself documents bridge + port mapping for Docker Desktop. Host mode
+#   would bar the container from the proxy network and the Caddy route.
+# - ports: dual access. Caddy serves the canonical
+#   https://ipmideck.absurdlab.dev route over the proxy network; a direct
+#   LAN fallback publishes 6233 (mnemonic for IPMI's UDP 623; 3000 is the
+#   well-known dev-webapp port and was avoided) bound to the TrueNAS LAN
+#   address (Jellyfin pattern).
+# - user: dedicated non-login identity 3003:3003 (house identity pattern;
+#   3001 jellyfin, 3002 immich). If the image misbehaves non-root at first
+#   deploy, drop the user: line and let /data be root-owned instead.
+# - version pinned exactly (house rule); the image bundles ipmitool and
+#   ships its own /api/health healthcheck, which is not re-declared here.
+# - init: true carried over from upstream (their D-26): reaps orphaned
+#   ipmitool children after the in-process Restart action.
+# - first run is an interactive in-app wizard (admin credentials, then add
+#   the BMCs: 192.168.20.10 TrueNAS, 192.168.20.20 backup NAS); no
+#   deploy-time credentials, so this stack has no secrets and self-recovers
+#   after daemon-initiated restarts (apps decision #8 N/A).
+services:
+  ipmideck:
+    image: devluigi06/ipmideck:2.0.1
+    container_name: ipmideck
+    restart: unless-stopped
+    init: true
+    user: "${IPMIDECK_UID:?IPMIDECK_UID must be set}:${IPMIDECK_GID:?IPMIDECK_GID must be set}"
+    ports:
+      # Direct LAN fallback; Caddy serves the canonical
+      # https://ipmideck.absurdlab.dev route over the proxy network.
+      - "${IPMIDECK_BIND_ADDRESS:?IPMIDECK_BIND_ADDRESS must be set}:${IPMIDECK_PUBLISHED_PORT:-6233}:3000"
+    volumes:
+      # config.yaml, sensor history, and the AES key encrypting stored BMC
+      # credentials; durable dataset, inherits puddle/apps snapshots.
+      - "${IPMIDECK_DATA_PATH:?IPMIDECK_DATA_PATH must be set}:/data"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      IPMIDECK_DEMO: "false"
+    labels:
+      caddy: ipmideck.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
