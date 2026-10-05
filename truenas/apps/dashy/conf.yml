@@ -96,3 +96,11 @@ sections:
         description: IPMIDeck direct LAN fallback
         url: http://192.168.20.11:6233
         icon: mdi-developer-board
+      - title: ComfyUI
+        description: ComfyUI image generation via Caddy
+        url: https://comfy.absurdlab.dev
+        icon: sh-comfyui
+      - title: ComfyUI Direct
+        description: ComfyUI direct LAN fallback
+        url: http://192.168.20.11:8188
+        icon: sh-comfyui
