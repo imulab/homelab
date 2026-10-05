@@ -77,7 +77,9 @@ services:
     environment:
       TZ: ${TZ:-Etc/UTC}
       HSA_OVERRIDE_GFX_VERSION: "12.0.1"
-      PYTORCH_HIP_ALLOC_CONF: "garbage_collection_threshold:0.9,max_split_size_mb:512"
+      # Unified allocator config name (PYTORCH_HIP_ALLOC_CONF is deprecated
+      # in the image's PyTorch 2.9.1 and warns on every boot).
+      PYTORCH_ALLOC_CONF: "garbage_collection_threshold:0.9,max_split_size_mb:512"
       # The entrypoint hardcodes --listen --port 8188; extra server args go
       # through CLI_ARGS only.
       CLI_ARGS: "${COMFYUI_CLI_ARGS:---disable-smart-memory --use-pytorch-cross-attention}"
