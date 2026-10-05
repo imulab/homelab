@@ -50,12 +50,18 @@ services:
     devices:
       # Long syntax: the by-path PCI address contains colons, which the
       # short "host:container" form cannot parse.
+      # permissions is explicit because runc 1.2 rejects device entries
+      # whose access field is empty, which is what compose sends for
+      # long-syntax devices without a permissions key
+      # ("device access at N field cannot be empty").
       # R9700 render node via by-path symlink; appears as renderD128 inside.
       - source: "${COMFYUI_RENDER_DEVICE:?COMFYUI_RENDER_DEVICE must be set}"
         target: /dev/dri/renderD128
+        permissions: rwm
       # AMD compute node, mapped directly (no by-path variant exists).
       - source: /dev/kfd
         target: /dev/kfd
+        permissions: rwm
     group_add:
       # Numeric GID of the host render group; owns /dev/kfd and render nodes.
       - "${COMFYUI_RENDER_GID:?COMFYUI_RENDER_GID must be set}"
