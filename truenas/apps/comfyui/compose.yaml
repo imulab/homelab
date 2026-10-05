@@ -22,19 +22,22 @@
 #   HSA_OVERRIDE_GFX_VERSION=12.0.1 is gfx1201 itself: a no-op where native
 #   support exists, and it resolved a reported R9700 KSampler hang (#164).
 #   PYTORCH_HIP_ALLOC_CONF follows #171's stable RDNA4 config.
-# - devices: only the R9700's render node, bound through the stable PCI
-#   by-path symlink (renderD numbering shifts when GPUs change; by-path
-#   encodes the PCI address), plus /dev/kfd (single node, no by-path
-#   variant exists). The Intel A380 stays with Jellyfin. No card node is
-#   mapped: ROCm compute needs render + kfd only.
+# - devices: the whole /dev/dri directory plus /dev/kfd, upstream's
+#   documented mapping. An earlier revision mapped only the R9700's
+#   render node via its by-path symlink renamed to renderD128, which hid
+#   the GPU from ROCm (see the devices comment below for the mechanism).
 # - no healthcheck: the image ships none and the house rule never
 #   fabricates one.
 # - GPU co-tenancy: there is no VRAM isolation between ROCm processes, so
 #   this stack and the LLM stack (llama.cpp, wayfinder #40) run mutually
 #   exclusively: stop one in Dockhand before starting the other.
-# - kernel gate: gfx1201 compute needs amdgpu/KFD from Linux 6.14+, i.e.
-#   the TrueNAS 26 line (6.18). The 6.12 production kernel on the 25.10
-#   line predates RDNA4 compute; see .env.example before deploying.
+# - kernel: contrary to the upstream-mainline 6.14 gate, this box's
+#   6.12.95-production+truenas kernel runs gfx1201 on KFD (verified
+#   2026-10-05: rocminfo enumerates gfx1201, torch sees 1 HIP device).
+#   Watch item: dmesg shows recurring "MES ring buffer is full" and one
+#   resume-time "ring gfx_32.1.1 test failed (-110)". If generation
+#   hangs appear, pin runtime PM (power/control=on on 0000:23:00.0) and
+#   treat the TrueNAS 26 upgrade (newer amdgpu) as the durable fix.
 # - first run: no models are bundled or preinstalled (agreed 2026-10-05).
 #   Fastest start: open the web UI, load the official Qwen-Image native
 #   workflow template from docs.comfy.org, and accept its missing-model
@@ -48,15 +51,20 @@ services:
     # nodes spawn (ffmpeg and friends).
     init: true
     devices:
-      # Long syntax: the by-path PCI address contains colons, which the
-      # short "host:container" form cannot parse.
-      # permissions is explicit because runc 1.2 rejects device entries
-      # whose access field is empty, which is what compose sends for
-      # long-syntax devices without a permissions key
+      # Long syntax with explicit permissions: runc 1.2 rejects device
+      # entries with an empty access field, which is what compose sends
+      # for long-syntax devices without a permissions key
       # ("device access at N field cannot be empty").
-      # R9700 render node via by-path symlink; appears as renderD128 inside.
-      - source: "${COMFYUI_RENDER_DEVICE:?COMFYUI_RENDER_DEVICE must be set}"
-        target: /dev/dri/renderD128
+      # The whole /dev/dri directory, NOT a single renamed render node:
+      # ROCm's runtime learns the render minor from KFD topology and
+      # opens /dev/dri/renderD<N> by that host-side number, so remapping
+      # the R9700's node (renderD129 on this box) to renderD128 inside
+      # the container hid the GPU entirely ("No HIP GPUs are available",
+      # diagnosed 2026-10-05). Directory mapping keeps host names, is
+      # immune to renumbering, and matches upstream's documented mapping;
+      # the A380 and ASPEED nodes ride along but ROCm ignores them.
+      - source: /dev/dri
+        target: /dev/dri
         permissions: rwm
       # AMD compute node, mapped directly (no by-path variant exists).
       - source: /dev/kfd
