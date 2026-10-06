@@ -31,13 +31,16 @@
 # - GPU co-tenancy: there is no VRAM isolation between ROCm processes, so
 #   this stack and the LLM stack (llama.cpp, wayfinder #40) run mutually
 #   exclusively: stop one in Dockhand before starting the other.
-# - kernel: contrary to the upstream-mainline 6.14 gate, this box's
-#   6.12.95-production+truenas kernel runs gfx1201 on KFD (verified
-#   2026-10-05: rocminfo enumerates gfx1201, torch sees 1 HIP device).
-#   Watch item: dmesg shows recurring "MES ring buffer is full" and one
-#   resume-time "ring gfx_32.1.1 test failed (-110)". If generation
-#   hangs appear, pin runtime PM (power/control=on on 0000:23:00.0) and
-#   treat the TrueNAS 26 upgrade (newer amdgpu) as the durable fix.
+# - kernel: the 25.10 kernel (6.12.95-production+truenas) enumerated
+#   gfx1201 but wedged on first GPU context: every amdgpu init failed a
+#   gfx ring test (-110) with endless "MES ring buffer is full", and
+#   ComfyUI spun one core right after the "ROCm version" log line
+#   (enumeration-only checks like rocminfo/device_count passed, which
+#   was misleading). Resolved 2026-10-06 by upgrading to TrueNAS 26
+#   (kernel 6.18): clean init and working generation. Power model:
+#   keep power/control=auto; a running ComfyUI holds the device open
+#   and keeps the card awake, and the card runtime-suspends whenever
+#   the stack is stopped, so night sleep == scheduled stack stop.
 # - first run: no models are bundled or preinstalled (agreed 2026-10-05).
 #   Fastest start: open the web UI, load the official Qwen-Image native
 #   workflow template from docs.comfy.org, and accept its missing-model
