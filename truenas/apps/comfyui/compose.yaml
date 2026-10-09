@@ -29,8 +29,10 @@
 # - no healthcheck: the image ships none and the house rule never
 #   fabricates one.
 # - GPU co-tenancy: there is no VRAM isolation between ROCm processes, so
-#   this stack and the LLM stack (llama.cpp, wayfinder #40) run mutually
-#   exclusively: stop one in Dockhand before starting the other.
+#   this stack and the LLM stacks (truenas/apps/strata: strata-daily and
+#   strata-coding) run mutually exclusively: stop one in Dockhand before
+#   starting the other. Only strata-daily auto-starts after a reboot; this
+#   stack and strata-coding do not.
 # - kernel: the 25.10 kernel (6.12.95-production+truenas) enumerated
 #   gfx1201 but wedged on first GPU context: every amdgpu init failed a
 #   gfx ring test (-110) with endless "MES ring buffer is full", and
@@ -49,7 +51,12 @@ services:
   comfyui:
     image: yanwk/comfyui-boot:rocm7-20260930
     container_name: comfyui
-    restart: unless-stopped
+    # Does NOT auto-start. One GPU and no VRAM isolation between ROCm
+    # processes means a reboot must bring back exactly one tenant, and that is
+    # strata-daily (truenas/apps/strata). Start ComfyUI by hand in Dockhand.
+    # "no" is quoted on purpose: unquoted no is YAML boolean false and
+    # Compose rejects it.
+    restart: "no"
     # House pattern (ipmideck): reap orphaned subprocesses that custom
     # nodes spawn (ffmpeg and friends).
     init: true
