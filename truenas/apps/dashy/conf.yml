@@ -104,3 +104,15 @@ sections:
         description: ComfyUI direct LAN fallback
         url: http://192.168.20.11:8188
         icon: sh-comfyui
+      - title: Strata Daily
+        description: Strata LLM daily driver via Caddy
+        url: https://strata-daily.absurdlab.dev
+        icon: mdi-brain
+      - title: Strata Direct
+        description: Strata direct LAN fallback (whichever profile is running)
+        url: http://192.168.20.11:27182
+        icon: mdi-brain
+      - title: Strata Coding
+        description: Strata LLM coding profile via Caddy (started by hand)
+        url: https://strata-coding.absurdlab.dev
+        icon: mdi-brain
