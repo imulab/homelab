@@ -1,0 +1,110 @@
+# Strata "daily driver" - Qwen3.8-Flash-Next (Swift 1.5 IQ2_XS) on the AMD
+# Radeon AI PRO R9700 (RDNA4, gfx1201) over Strata's HIP backend.
+#
+# One of TWO Strata stacks; the other is truenas/apps/strata-coding. They are
+# separate stacks rather than two services in one, because Compose cannot
+# express "defined but not started" for a single service - verified against
+# Docker: `restart: "no"` still starts on `up`, while `deploy.replicas: 0` and
+# `profiles:` leave no container at all, so Dockhand could not start it later.
+# Separate stacks give Dockhand independent start/stop, which is the switch you
+# actually want.
+#
+# MUTUAL EXCLUSION: strata-daily, strata-coding and comfyui all want the one
+# GPU, and there is no VRAM isolation between ROCm processes - oversubscription
+# surfaces as a hang or a stuck 100%-GPU state rather than a clean OOM. Stop
+# one in Dockhand before starting another. Both Strata stacks publish host
+# :27182, so a mistaken second start also fails fast on the port bind.
+#
+# restart: unless-stopped is deliberate: this is the ONE stack that comes back
+# by itself after a reboot, so the daily driver is simply there with no manual
+# step. strata-coding and comfyui are both restart: "no" and stay down.
+services:
+  strata-daily:
+    build:
+      context: .
+      args:
+        STRATA_REF: "${STRATA_REF:?STRATA_REF must be set - see .env.example}"
+        HIP_ARCH: ${STRATA_HIP_ARCH:-gfx1201}
+        BUILD_VISION: ${STRATA_BUILD_VISION:-cpu}
+    image: strata-hip:local
+    container_name: strata-daily
+    restart: unless-stopped
+    # Reap the engine's child processes (setup.py execs the server, which
+    # spawns worker pools); house pattern from ipmideck/comfyui.
+    init: true
+    # The engine releases tens of GB of page-locked RAM on SIGTERM, far longer
+    # than Docker's 10 s default. Without this, every profile switch SIGKILLs
+    # the engine (exit 137).
+    stop_grace_period: 60s
+    devices:
+      # Whole /dev/dri directory plus /dev/kfd, long syntax with explicit
+      # permissions: runc rejects device entries with an empty access field,
+      # which is what compose sends for long syntax without a permissions key.
+      # Do NOT remap a render node to a different minor - ROCm opens renderD<N>
+      # by the number KFD topology reports, so renaming hides the GPU.
+      - source: /dev/dri
+        target: /dev/dri
+        permissions: rwm
+      - source: /dev/kfd
+        target: /dev/kfd
+        permissions: rwm
+    group_add:
+      # Numeric GID of the host render group, which owns /dev/kfd and the
+      # render nodes. Verify: stat -c '%n gid=%g' /dev/kfd /dev/dri/renderD*
+      - "${STRATA_RENDER_GID:?STRATA_RENDER_GID must be set}"
+    security_opt:
+      - seccomp=unconfined
+    ulimits:
+      # The engine page-locks tens of GB of expert arena; the default memlock
+      # limit is far too low and ROCm fails the large pinned allocation.
+      memlock: -1
+    ports:
+      # Direct LAN fallback (Jellyfin/IPMIDeck/ComfyUI pattern). Caddy serves
+      # the canonical https://strata-daily.absurdlab.dev route over the
+      # external proxy network; that hostname resolves only via the photonicat
+      # dnsmasq hijack.
+      #
+      # Host port 27182, NOT Strata's native 8080: the TrueNAS web UI already
+      # owns host 8080 on this box (see dashy/conf.yml, "TrueNAS web UI over
+      # HTTP") and Caddy holds 80/443. The CONTAINER port stays 8080.
+      #
+      # 27182 is below Linux's ephemeral range (32768-60999), so Docker's bind
+      # can never race a transient outbound allocation, and it is far enough
+      # from every port in use here (8080, 8443, 8096, 2283, 6233, 8188,
+      # 30328) that a range scan will not stumble onto it.
+      - "${STRATA_BIND_ADDRESS:?STRATA_BIND_ADDRESS must be set}:${STRATA_PUBLISHED_PORT:-27182}:8080"
+    volumes:
+      # /data root (config, packs, mtp) lives on puddle and is the part worth
+      # snapshotting. /data/models is overlaid from the Optane: shard 2, the
+      # 28.8 GB n-gram/PLE lookup table, is read from disk DURING INFERENCE
+      # rather than loaded into RAM, so it must be on flash. packs/ and mtp/
+      # are DERIVED artefacts (tools/iq_pack.py rebuilds them from the shards)
+      # read once at startup, so they stay on the spinning pool.
+      - "${STRATA_DATA_PATH:?STRATA_DATA_PATH must be set}:/data"
+      - "${STRATA_MODELS_PATH:?STRATA_MODELS_PATH must be set}:/data/models"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      FAMILY: ${STRATA_DAILY_FAMILY:-swift}
+      MODEL: ${STRATA_DAILY_MODEL:-IQ2_XS}
+      CONTEXT: ${STRATA_DAILY_CONTEXT:-65536}
+      KV: ${STRATA_DAILY_KV:-int8}
+      VISION: ${STRATA_DAILY_VISION:-cpu}
+    # A HARD cap, never a soft one. Docker's mem_limit sets cgroup memory.max
+    # (the MemoryMax equivalent). Strata's own guidance is to never use a
+    # throttling limit: setup.py reads the HOST's /proc/meminfo, so a
+    # throttled container stalls page-ins instead of failing cleanly. The cap
+    # must EXCEED what setup plans, or setup configures a full-RAM layout that
+    # the cap then OOM-kills: IQ2_XS plans ~45 GB (35.5 GB experts + ~10 GB),
+    # so 64g leaves headroom and still leaves 64 GB of the host for TrueNAS,
+    # ZFS ARC and the other stacks. Capping below the plan requires LOW_RAM=on,
+    # which streams experts from the pack's experts.bin instead of from RAM.
+    mem_limit: ${STRATA_DAILY_MEM_LIMIT:-64g}
+    labels:
+      caddy: strata-daily.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
