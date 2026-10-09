@@ -1,0 +1,82 @@
+# Strata "coding" profile - Qwen3.8-Flash-Next Coder IQ1_M on the AMD Radeon
+# AI PRO R9700 (RDNA4, gfx1201) over Strata's HIP backend.
+#
+# One of TWO Strata stacks; the other is truenas/apps/strata-daily, which
+# carries the full deployment runbook (datasets, model pre-seed, verification).
+# Read that first.
+#
+# MUTUAL EXCLUSION: strata-daily, strata-coding and comfyui all want the one
+# GPU, and there is no VRAM isolation between ROCm processes - oversubscription
+# surfaces as a hang or a stuck 100%-GPU state rather than a clean OOM. Stop
+# one in Dockhand before starting another. Both Strata stacks publish host
+# :27182, so a mistaken second start also fails fast on the port bind.
+#
+# restart: "no" is deliberate: only strata-daily comes back after a reboot.
+# Note this only governs RESTARTS. It does not stop `docker compose up` from
+# starting the container on a deploy, which is exactly why this is its own
+# stack rather than a second service in the daily stack. Deploy it when you
+# want it, stop it when you switch back.
+services:
+  strata-coding:
+    build:
+      context: .
+      args:
+        STRATA_REF: "${STRATA_REF:?STRATA_REF must be set - see .env.example}"
+        HIP_ARCH: ${STRATA_HIP_ARCH:-gfx1201}
+        BUILD_VISION: ${STRATA_BUILD_VISION:-cpu}
+    image: strata-hip:local
+    container_name: strata-coding
+    # Quoted on purpose: unquoted no is YAML boolean false and Compose rejects
+    # it. Same trap for yes/on/off.
+    restart: "no"
+    init: true
+    stop_grace_period: 60s
+    devices:
+      # Whole /dev/dri directory plus /dev/kfd, long syntax with explicit
+      # permissions (runc rejects an empty access field). Do NOT remap a render
+      # node to a different minor - ROCm opens renderD<N> by the number KFD
+      # topology reports.
+      - source: /dev/dri
+        target: /dev/dri
+        permissions: rwm
+      - source: /dev/kfd
+        target: /dev/kfd
+        permissions: rwm
+    group_add:
+      - "${STRATA_RENDER_GID:?STRATA_RENDER_GID must be set}"
+    security_opt:
+      - seccomp=unconfined
+    ulimits:
+      memlock: -1
+    ports:
+      # Same host port as the daily stack on purpose: only one profile runs at
+      # a time, and a mistaken co-start then fails on the bind rather than
+      # fighting for VRAM. See strata-daily/compose.yaml for why this is 27182
+      # and not Strata's native 8080.
+      - "${STRATA_BIND_ADDRESS:?STRATA_BIND_ADDRESS must be set}:${STRATA_PUBLISHED_PORT:-27182}:8080"
+    volumes:
+      # Identical layout to the daily stack: the two profiles share one model
+      # tree, one pack directory and one MTP layer, so switching profiles never
+      # re-downloads anything.
+      - "${STRATA_DATA_PATH:?STRATA_DATA_PATH must be set}:/data"
+      - "${STRATA_MODELS_PATH:?STRATA_MODELS_PATH must be set}:/data/models"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      FAMILY: ${STRATA_CODING_FAMILY:-coder}
+      MODEL: ${STRATA_CODING_MODEL:-IQ1_M}
+      CONTEXT: ${STRATA_CODING_CONTEXT:-131072}
+      KV: ${STRATA_CODING_KV:-k8v4}
+      VISION: ${STRATA_CODING_VISION:-cpu}
+    # The Coder's 23 GB of experts fit the whole 32 GB card, so it plans a
+    # smaller RAM footprint than the daily model (~33 GB). Hard cap, same
+    # reasoning as the daily stack.
+    mem_limit: ${STRATA_CODING_MEM_LIMIT:-48g}
+    labels:
+      caddy: strata-coding.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
