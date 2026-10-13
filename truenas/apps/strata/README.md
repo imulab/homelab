@@ -28,18 +28,31 @@ the bind.
 
 ### The tier
 
-Resident expert slots are the only real throughput lever on this card, and they
-shrink as the quant grows. Working from the measured R9700 configuration in
-`docs/AMD_HIP.md` (12,288 slots in 23.4 GiB — ~1.90 MiB/slot for the Coder's
-IQ1_M), and the larger per-slot cost of the bigger IQ formats:
+Resident expert slots are the main throughput lever on this card, and they
+shrink as the quant grows. The slots below are **projections** from the measured
+R9700 configuration in `docs/AMD_HIP.md` (12,288 slots in 23.4 GiB — ~1.90
+MiB/slot for the Coder's IQ1_M) plus the larger per-slot cost of the bigger IQ
+formats. Only the IQ3_XXS row has since been measured on this box, and it was
+**wrong by a wide margin in the pessimistic direction** — see
+[Measured on this box](#measured-on-this-box):
 
 | Tier | expert arena | fits 900P | ≈ slots resident | share |
 |---|---:|---|---:|---:|
 | Q2_0 | 34.0 GB | yes | most | — |
-| IQ2_XS | 35.5 GB | yes | ~14,000 / 24,576 | ~57% |
-| **IQ3_XXS** | **42.9 GB** | yes | **~10,000 / 24,576** | **~41%** |
-| IQ3_S | 50.3 GB | yes | ~8,600 / 24,576 | ~35% |
+| IQ2_XS | 35.5 GB | yes | ~14,000 / 24,576 | ~57% (projected) |
+| **IQ3_XXS** | **42.9 GB** | yes | **15,271 / 24,576** | **62% (measured)** |
+| IQ3_S | 50.3 GB | yes | ~8,600 / 24,576 | ~35% (projected) |
 | Coder IQ1_M | 23.4 GB | yes | 12,288 / 12,288 | 100% |
+
+The projection for IQ3_XXS said ~10,000 slots (41%). The card actually holds
+15,271. Two things drove the underestimate, and only the first is certain from
+the measurement: the per-slot cost was derived from Strata's Coder reference
+(`IQ1_M`, 12,288 slots in 23.4 GiB ≈ 1.90 MiB/slot) and applied unchanged to
+IQ3_XXS, whereas the measured IQ3_XXS figure is ~1.70 MiB/slot — the slot size
+does not transfer between tiers; and the VRAM left for the cache was taken to be
+smaller than it evidently is. Treat the remaining rows as unmeasured; only
+IQ3_XXS is used here, and the other tiers would need their own measurement before
+any of them is trusted.
 
 IQ2_XS is the faster tier and IQ3_XXS the better one. The quality case for IQ3
 here is not the benchmark average — it is *where* the 2-bit tier degrades first.
@@ -64,10 +77,14 @@ That matters because the intended use includes **execution-only coding
 delegation**, where format adherence and stopping are the failure modes that
 break a harness. The cost is real but bounded: the same direct comparison
 measured IQ3_XXS at ~15% slower short-context decode, ~10% slower at 35K+, and
-**1% faster prefill**, with MTP draft acceptance slightly *better*. This box is
-not a 3060 — a single R9700 measured **98.4 tok/s decode** on the IQ3 tier at
-256K with the same KV-streaming configuration — so treat 60–90 tok/s as the
-starting expectation and replace it with your own number (section 5).
+**1% faster prefill**, with MTP draft acceptance slightly *better*.
+
+On the speed question the published R9700 figures are the wrong anchor. A single
+R9700 measured **98.4 tok/s decode** on the IQ3 tier at 256K — but on a Ryzen 7
+9700X over PCIe 5.0. This box sustains **~28.6 tok/s decode**, and the gap is
+CPU-side expert compute, not the link (see
+[Measured on this box](#measured-on-this-box)); a 60–90 tok/s expectation, which
+this runbook carried until the first deployment, was never reachable on Zen 1.
 
 Two tiers to know about but not use here: **IQ3_S** is the strongest quality
 point overall, but at `STRATA_REF=v0.1.41` Swift has no IQ3_S — the setup table
@@ -198,7 +215,7 @@ OpenZFS's actual hard guidance is only to keep free space above 10% — below 4%
 free the metaslabs flip from first-fit to best-fit allocation and IOPS collapse.
 The 80% figure is community convention, not a ZFS requirement. With one model
 instead of two there is roughly 170 GiB spare, which is what makes the IQ2_XS
-hedge in section 6 affordable if you ever want it.
+hedge in section 5 affordable if you ever want it.
 
 ## 2. Pre-seed the models
 
@@ -373,29 +390,130 @@ reports what is running.
 ## 5. Benchmark it — your own numbers, first
 
 Every published R9700 figure was measured on a PCIe 4.0/5.0 host. This box is
-**PCIe 3.0 x16**, and the published CPU is much faster than a 7551P. Neither an
-estimate nor a vendor number substitutes for one measurement here, and the
-engine reports it per request with no tooling:
+**PCIe 3.0 x16**, and the published CPU is much faster than a 7551P. The first
+deployment has since put numbers on it ([Measured on this box](#measured-on-this-box)),
+but re-measure whenever the quant tier, the context or the engine ref changes.
 
-```sh
-# One prompt, then read the engine's own line: prefill and decode tok/s
-curl -s http://192.168.20.11:27182/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"strata","messages":[{"role":"user","content":"Count from 1 to 50."}],"max_tokens":64}' \
-  >/dev/null
-docker logs --since 5m strata 2>&1 | grep "tok/s decode"
+The engine reports per-request numbers with no tooling, but **not on container
+stdout by default**. The format is
+
+```
+prompt P tokens = C reused + N read in R ms (X tok/s), G generated in M ms (Y tok/s)
 ```
 
-The line reads
-`request prompt P cached C output O prompt_read R ms total S ms prefill X tok/s decode Y tok/s`.
-Record `X` and `Y` at ~1K and again at ~32K prompt tokens — prefill is where a
-256K window costs you, decode is flat in context. Then A/B the tuning in
-section 6 against that baseline, one change at a time. The reference points to
-compare against, both measured on one R9700 at 256K with KV streaming:
-**98.4 tok/s decode / 255 tok/s prefill** on a Ryzen 7 9700X over PCIe 5.0, and
-**87.6 tok/s decode at 131K context**.
+where `X` is prefill (prompt read), `Y` is decode, and `C` is how much of the
+prompt came from the prefix cache. Grep the engine's own log for it:
 
-## 6. Tuning
+```sh
+sudo grep -E "prompt [0-9]+ tokens" /mnt/puddle/apps/strata/strata-swift-iq3_xxs.log | tail -5
+```
+
+The friendlier re-statement — `request prompt P cached C output O prompt_read R ms
+total S ms prefill X tok/s decode Y tok/s` — is printed to container stdout
+**only when `STRATA_REQUEST_LINES=1`** is set (`serve/server.py`, `echo_requests`).
+Without that variable, `docker logs … | grep "tok/s decode"` matches nothing;
+that is expected, not a sign the engine is silent. What container stdout always
+carries is the generation progress line:
+
+```sh
+docker logs strata 2>&1 | grep -E "answering:|done:" | tail -5
+# [strata] answering: 3221 of max 261499 tokens, 28.4 tok/s, 118 s
+# [strata] done: 3280 tokens in 119 s (28.6 tok/s) ..., expert cache 98.8% hit (+0.1% over PCIe)
+```
+
+That rate covers generated tokens over the request window, so on a long answer
+after a short prompt it is close to pure decode; on a short answer after a long
+prompt it is dragged down by prefill. Use the engine log's split line when the
+two need separating.
+
+Record `X` and `Y` at ~1K and again at ~32K prompt tokens — prefill is where a
+256K window costs you, decode is flat in context. The published comparison
+points, all on one R9700 at 256K with KV streaming, are **98.4 tok/s decode /
+255 tok/s prefill** on a Ryzen 7 9700X over PCIe 5.0 and **87.6 tok/s decode at
+131K**; the same page records **45.5–48.3 tok/s decode** for a Coder IQ1_M at
+32K, which is the more honest shape of reference for this CPU class.
+
+Then A/B the tuning in section 7 against that baseline, one change at a time —
+and note that the first deployment already retired one of those candidates
+(section 6): at a 98.8% expert-cache hit, `--pcie-frac` has almost nothing left
+to move.
+
+## 6. Measured on this box
+
+First deployment, 2026-10-13: Swift 1.5 IQ3_XXS at 262144 context, one R9700,
+EPYC 7551P, PCIe 3.0 x16, `STRATA_REF=v0.1.41`. Verbatim from the container log:
+
+```
+--max-context 262144 --kv int8 --kv-resident 32768 --vision --vram-reserve-mib 700; server
+[strata] filling the GPU's expert cache (15271 experts, 24.79 GiB of VRAM) ...
+[strata] done: 3280 tokens in 119 s (28.6 tok/s) (stop, cancel=False), expert cache 98.8% hit (+0.1% of the routed experts over PCIe)
+```
+
+| | Measured | Projected before the deploy |
+|---|---|---|
+| Expert slots resident | **15,271 / 24,576 = 62%** | ~10,000 (41%) |
+| Expert cache in VRAM | 24.79 GiB | — |
+| Cache hit rate | **96.2% → 98.8%** as the session warmed | — |
+| Routed experts over PCIe | **0.1–0.5%** | assumed significant |
+| Sustained decode | **28.6 tok/s** | 60–90 tok/s |
+| Short-request rates | 252 tok in 35 s (7.9 tok/s) at 96.2%; 134 tok in 10 s (23.3 tok/s) at 98.0% | — |
+
+Two corrections follow from this, and both were errors in this runbook rather
+than in the build.
+
+**The expert-residency projection was wrong, and wrong pessimistically.** The
+model-choice table estimated ~41% residency for IQ3_XXS, derived from Strata's
+Coder reference figures, and concluded that PCIe 3.0 would be the binding
+constraint on decode. The card actually holds 62% of the routed experts and
+misses 0.1–0.5% of them at runtime. **The Gen3 link is nearly irrelevant to
+decode**, not the bottleneck. The projection has been corrected in place rather
+than quietly, and the remaining unmeasured tiers are now marked as projections.
+
+**The 60–90 tok/s expectation was never reachable on this CPU.** It was anchored
+on 98.4 tok/s measured on a Ryzen 7 9700X over PCIe 5.0 — and on the *larger*
+IQ3_S tier, so the deficit is if anything understated for IQ3_XXS. With only
+0.1% of routed experts crossing PCIe, each token is bounded by expert and
+attention compute rather than by any transfer, and a Zen 1 core is roughly a
+third the speed of that host. **~28.6 tok/s sustained is the expected figure for
+this box**, not a symptom of misconfiguration.
+
+The rate is steady rather than decaying — 28.0 → 28.6 tok/s monotonically across
+119 seconds — which matters because the web UI's live rate is, in Strata's own
+words, "a rate over a window, not a mean since the first token". The UI showed
+bursts near 80 tok/s; under MTP speculative decoding a forward pass emits `1 +
+accepted drafts`, so windows where drafts land read high while the average
+settles lower. **There is no separate fast "answer phase"**: thinking and answer
+tokens go through the same decode path. Only the sustained figure is comparable
+across configurations.
+
+The two short requests are not evidence of a slow box. At 134 and 252 generated
+tokens, fixed per-request and MTP warm-up costs dominate the window; only the
+3,280-token request is a usable decode measurement. If those phases need
+separating, the engine log's split line is the instrument — see section 5.
+
+**No worker-count tuning is available here.** `--pool-workers` defaults to `0`,
+which the engine documents as "every physical core minus the host's"
+(`src/program/generate.cpp`), so on the 32-core 7551P it already runs ~31. Setup
+only overrides it for hybrid Intel P/E CPUs (`hybrid_pool_workers`, which returns
+None unless efficiency cores outnumber performance cores), and the 7551P is
+homogeneous. The one related tip is `two_socket_note`: on 2-socket Xeons, 17–18
+single-socket workers beat 35 by ~20%, because remote-socket expert workers are
+slower. That is **conditional on the box being dual-socket** — check with
+`lscpu | grep -i socket` before acting on it, and note it is a print-only
+advisory that setup never writes to the config. The H11SSL-i is single-socket, so
+nothing to do.
+
+**What this does not establish**, stated because the measurement is narrow:
+prefill at 32K or beyond is unmeasured, since every request above was a short
+prompt with a long answer, and prefill is the phase a 256K window actually taxes.
+Decode is measured at one point in a 262144-token window rather than near its
+ceiling. This is a single session of a handful of requests whose prompts are not
+recorded, so it is not a benchmark — it is what one deployment happened to
+report, and the cache figures in particular were still climbing as the session
+warmed, which says nothing about how a different workload would settle. One model
+tier, one engine ref.
+
+## 7. Tuning
 
 Two switches exist, one is on, one needs a measurement first.
 
@@ -445,11 +563,19 @@ comment. Note the volume copy is the source of truth on later starts — editing
 `/opt/strata` alone does nothing, and a redeploy that changes a setting the
 launcher presets can regenerate the file.
 
+**The measurement has since shrunk this lever's ceiling.** With a 98.8% cache
+hit, only 0.1% of routed experts cross the link at all (section 6), so the share
+the GPU reads over PCIe is already tiny and re-balancing it can move very little.
+At roughly 2.6 MB per expert, even a 10% miss rate would add on the order of
+0.2 ms per token against a ~35 ms budget, so this is not where the 28.6 tok/s
+goes. Try it only if a future workload drives the hit rate down; otherwise leave
+the probe's value alone and do not expect a gain.
+
 **Do not** trade throughput for reproducibility. The four flags that make greedy
 output byte-identical (`--prompt-cache 0 --adapt-swaps 0 --pcie-frac 0`,
 `STRATA_IQ_MT_MIN=1`) cost decode and prefix reuse, and no harness needs them.
 
-## 7. Day-2
+## 8. Day-2
 
 - **Before starting ComfyUI:** stop `strata` in Dockhand. Do not overlap them.
 - **Switch quant tier:** pre-seed the other tier's shards (section 2) and change
@@ -461,17 +587,20 @@ output byte-identical (`--prompt-cache 0 --adapt-swaps 0 --pcie-frac 0`,
   opposed to some other mode — it is the only vision mode on this card.
 - **Bump the engine:** change `STRATA_REF` in the env panel, then Deploy with
   "build images" enabled. Faster starts, sharper Vision, and the RDNA4 prompt
-  defaults of 0.1.43 are the reasons to consider it — see section 8.
+  defaults of 0.1.43 are the reasons to consider it — see section 9.
 - **Changing context or KV needs `REINSTALL=1`**, and each change re-plans the
   expert cache, so re-measure afterwards rather than assuming the old number.
 
-## 8. Outstanding follow-ups
+## 9. Outstanding follow-ups
 
-- **Benchmark your own numbers.** Section 5. Everything above is a host-transfer
-  estimate until you do.
+- **Measure prefill at depth.** Section 6 records decode at 28.6 tok/s but every
+  request there was a short prompt with a long answer, so **prefill at 32K and
+  beyond is still unmeasured** — and prefill is the phase a 256K window actually
+  taxes. This is the largest remaining unknown in the runbook, and the engine
+  log's split line (section 5) is the instrument for it.
 - **Consider `STRATA_REF=v0.1.43` once you have a baseline.** It turns the
   RDNA4 prompt-path defaults on by itself — route tail skip, the measured PCIe
-  share, 16K prompt chunks, and the fused IQ3 prompt experts that section 6
+  share, 16K prompt chunks, and the fused IQ3 prompt experts that section 7
   cannot confirm at 0.1.41. That is the single largest remaining prompt-side
   gain, but it is a new engine to re-verify, so take it as a second step rather
   than part of the first deploy.
