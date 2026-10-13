@@ -3,15 +3,12 @@
 # Strata (Niko1221/Strata) engine image for the AMD Radeon AI PRO R9700
 # (RDNA4, gfx1201) over the HIP backend, for TrueNAS SCALE 26 (kernel 6.18).
 #
-# !! THIS FILE IS DUPLICATED - KEEP BOTH COPIES BYTE-IDENTICAL !!
-# Each Strata stack carries its own copy, because Dockhand clones only the
-# directory holding a stack's compose file, so a build context outside the
-# stack directory is not reliably available:
-#   truenas/apps/strata-daily/Dockerfile
-#   truenas/apps/strata-coding/Dockerfile
-# A stale copy silently produces a different image depending on which stack was
-# deployed last. Both files being identical makes this the whole check:
-#   diff -q truenas/apps/strata-daily/Dockerfile truenas/apps/strata-coding/Dockerfile
+# This is now the ONLY Dockerfile in the tree. The two-stack split
+# (strata-daily + strata-coding) that forced a duplicated, keep-both-copies-
+# byte-identical copy of this file is gone, so that whole class of drift risk
+# went with it. Dockhand clones only the directory holding a stack's compose
+# file, which is why the build context is this directory and why the Strata
+# source is cloned at a pinned ref rather than vendored.
 #
 # The engine is compiled HERE, at image build time, so the container never
 # compiles. setup.py decides whether to reuse an engine by reading

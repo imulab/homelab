@@ -1,0 +1,161 @@
+# Strata - Qwen3.8-Flash-Next (Swift 1.5 IQ3_XXS) on the AMD Radeon AI PRO
+# R9700 (RDNA4, gfx1201) over Strata's HIP backend.
+#
+# ONE stack, ONE model, ONE endpoint. This replaced the earlier two-stack
+# "daily driver / coding profile" split (strata-daily + strata-coding) when the
+# requirement changed to a single balanced generalist that also serves
+# occasional execution-only coding delegation. Two consequences worth keeping in
+# mind:
+#
+#   * The switch you now need is GCU exclusivity, not profile switching, so this
+#     stack is the ONLY Strata stack. It is still mutually exclusive with
+#     comfyui (one GPU, no VRAM isolation between ROCm processes).
+#   * The old byte-identical-Dockerfile invariant is gone. There is exactly one
+#     Dockerfile in the tree now, so the "whichever stack deployed last decides
+#     what image runs" hazard cannot occur.
+#
+# MUTUAL EXCLUSION: this stack and comfyui both want the one GPU. Stop one in
+# Dockhand before starting the other. Both publish host :27182 / :8188
+# respectively, so a mistaken co-start also fails fast on the port bind.
+#
+# restart: unless-stopped is deliberate: this is the one GPU stack that comes
+# back by itself after a reboot, so the generalist is simply there with no
+# manual step. comfyui is restart: "no" and stays down.
+services:
+  strata:
+    build:
+      context: .
+      args:
+        STRATA_REF: "${STRATA_REF:?STRATA_REF must be set - see .env.example}"
+        HIP_ARCH: ${STRATA_HIP_ARCH:-gfx1201}
+        # Compiles the CPU image encoder into the image. The AMD backend has no
+        # GPU image encoder, so this is the only vision path on this card, and
+        # it costs no VRAM at inference time (the engine reserves 700 MiB, not
+        # the encoder itself). Vision is wanted for OCR and for building an
+        # index over the NAS video vault; UniFi camera streams are analysed by
+        # the UniFi AI Key instead, so no min_tokens tuning is needed here.
+        BUILD_VISION: ${STRATA_BUILD_VISION:-cpu}
+    image: strata-hip:local
+    container_name: strata
+    restart: unless-stopped
+    # Reap the engine's child processes (setup.py execs the server, which
+    # spawns worker pools); house pattern from ipmideck/comfyui.
+    init: true
+    # The engine releases tens of GB of page-locked RAM on SIGTERM, far longer
+    # than Docker's 10 s default. Without this, every stop SIGKILLs the engine
+    # (exit 137) and the next start may size its expert cache against a card
+    # that is still holding VRAM.
+    stop_grace_period: 60s
+    devices:
+      # Whole /dev/dri directory plus /dev/kfd, long syntax with explicit
+      # permissions: runc rejects device entries with an empty access field,
+      # which is what compose sends for long syntax without a permissions key.
+      # Do NOT remap a render node to a different minor - ROCm opens renderD<N>
+      # by the number KFD topology reports, so renaming hides the GPU.
+      - source: /dev/dri
+        target: /dev/dri
+        permissions: rwm
+      - source: /dev/kfd
+        target: /dev/kfd
+        permissions: rwm
+    group_add:
+      # Numeric GID of the host render group, which owns /dev/kfd and the
+      # render nodes. Verify: stat -c '%n gid=%g' /dev/kfd /dev/dri/renderD*
+      - "${STRATA_RENDER_GID:?STRATA_RENDER_GID must be set}"
+    security_opt:
+      - seccomp=unconfined
+    ulimits:
+      # The engine page-locks tens of GB of expert arena; the default memlock
+      # limit is far too low and ROCm fails the large pinned allocation.
+      memlock: -1
+    ports:
+      # Direct LAN fallback (Jellyfin/IPMIDeck/ComfyUI pattern). Caddy serves
+      # the canonical https://strata.absurdlab.dev route over the external
+      # proxy network; that hostname resolves only via the photonicat dnsmasq
+      # hijack.
+      #
+      # Host port 27182, NOT Strata's native 8080: the TrueNAS web UI already
+      # owns host 8080 on this box (see dashy/conf.yml, "TrueNAS web UI over
+      # HTTP") and Caddy holds 80/443. The CONTAINER port stays 8080. Carried
+      # over unchanged from the previous stack so the direct-LAN bookmark and
+      # the dashy "Strata Direct" entry keep working.
+      #
+      # 27182 is below Linux's ephemeral range (32768-60999), so Docker's bind
+      # can never race a transient outbound allocation, and it is far enough
+      # from every port in use here (8080, 8443, 8096, 2283, 6233, 8188,
+      # 30328) that a range scan will not stumble onto it.
+      - "${STRATA_BIND_ADDRESS:?STRATA_BIND_ADDRESS must be set}:${STRATA_PUBLISHED_PORT:-27182}:8080"
+    volumes:
+      # /data root (config, packs, mtp) lives on puddle and is the part worth
+      # snapshotting. /data/models is overlaid from the Optane: shard 2, the
+      # ~38.8 GB n-gram/PLE lookup table, is read from disk DURING INFERENCE
+      # rather than loaded into RAM, so it must be on flash. packs/ and mtp/
+      # are DERIVED artefacts (tools/iq_pack.py rebuilds them from the shards)
+      # read once at startup, so they stay on the spinning pool.
+      - "${STRATA_DATA_PATH:?STRATA_DATA_PATH must be set}:/data"
+      - "${STRATA_MODELS_PATH:?STRATA_MODELS_PATH must be set}:/data/models"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      FAMILY: ${STRATA_FAMILY:-swift}
+      MODEL: ${STRATA_MODEL:-IQ3_XXS}
+      # 262144 is the model's native trained ceiling, so it needs no rope
+      # scaling. From 64K up setup.py enables KV streaming automatically
+      # (--kv-resident 32768): the whole KV cache lives in pinned RAM and only
+      # the attended 32K window sits in VRAM, which is what frees the VRAM to
+      # hold more experts. On this box that is ~3.6 GB of RAM at 256K.
+      CONTEXT: ${STRATA_CONTEXT:-262144}
+      KV: ${STRATA_KV:-int8}
+      # cpu | no. "cpu" = the CPU image encoder handles images (the only vision
+      # path on RDNA4). "no" would remove image input entirely - it is NOT a
+      # "hand it to the CPU" switch, cpu already is that. Set "no" to buy back
+      # the 700 MiB VRAM reserve, which is worth ~280 of 24,576 expert slots,
+      # about 2% decode. Not worth losing OCR and vault indexing over.
+      VISION: ${STRATA_VISION:-cpu}
+      # auto | on | off. OFF deliberately, and it must stay off unless the
+      # memory cap grows: setup.py reads the HOST's /proc/meminfo (128 GiB), not
+      # the container cap, so it plans for a machine with 128 GiB and would
+      # never choose low-RAM mode here. There is no cgroup-aware path, and the
+      # engine's own start-time free-RAM check is the only backstop - which is
+      # the next line's job.
+      LOW_RAM: ${STRATA_LOW_RAM:-off}
+      # ---------------------------------------------------------------------
+      # Engine tuning switches (v0.1.41+). These are read by the engine process
+      # itself; serve/server.py forwards the container environment through, so
+      # a plain compose variable reaches the engine with no file edits.
+      # ---------------------------------------------------------------------
+      # Confident win, measured on this exact card (gfx1201) at this ref: the
+      # int8-KV prompt attention on RDNA4 matrix cores, 7.2-7.5x the portable
+      # kernel (R9700 4K 1,784 -> 2,427 tok/s, 16K 1,797 -> 2,700). Requires
+      # --kv int8, which is set above. NOT bitwise: greedy text can diverge from
+      # around token 50, and the engine also switches the prompt expert ring
+      # from 384 to 96 slots (the measured-good pairing). Accuracy was measured
+      # as within noise. Set to 0 to A/B it, or to silence the engine's startup
+      # hint (any value, 0 included, silences it).
+      STRATA_HIP_WMMA: ${STRATA_HIP_WMMA:-1}
+      # UNCERTAIN at this ref - left unset on purpose, see the experiment in
+      # README section 6. The fused int8 prompt-expert kernels are gated on a
+      # CUDA compute-capability check (dev_info().cc >= 80) that may not open on
+      # gfx1201 at v0.1.41, so the promised +15-20% prompt gain is unverified
+      # here. Turning it on is a one-line change and the engine prints a banner
+      # when the kernels actually take effect; the README has the pass/fail
+      # test. Later engine refs (0.1.43+) enable them by default on RDNA4.
+      STRATA_PF_FUSED: ${STRATA_PF_FUSED:-}
+    # A HARD cap, never a soft one. Docker's mem_limit sets cgroup memory.max
+    # (the MemoryMax equivalent). Strata's own guidance is to never use a
+    # throttling limit: setup.py reads the HOST's /proc/meminfo, so a throttled
+    # container stalls page-ins instead of failing cleanly, and the cap must
+    # EXCEED what setup plans or setup configures a full-RAM layout that the
+    # cap then OOM-kills. IQ3_XXS plans ~42.9 GB of experts plus ~10 GB of
+    # dense weights/engine, plus ~3.6 GB of streamed KV at 256K: ~57 GB, so 64g
+    # leaves headroom and still leaves ~64 GB of the host for TrueNAS, ZFS ARC
+    # and the other stacks.
+    mem_limit: ${STRATA_MEM_LIMIT:-64g}
+    labels:
+      caddy: strata.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 8080}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
