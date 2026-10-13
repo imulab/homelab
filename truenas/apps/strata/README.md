@@ -207,6 +207,45 @@ container. `--gguf-dir` is not needed: shards hand-placed with their **original
 names** in the expected subdirectory are validated against their own tensor
 directory and marked whole, so setup skips the download entirely.
 
+### The directory name is case-sensitive — get it from the log
+
+`setup.py` builds the path as `models_dir / tag`, where the tag is the family
+prefix plus the model name **uppercased**. The model directory therefore uses
+the **mixed-case** tag while the config and pack use `tag.lower()`:
+
+| Artefact | Path |
+|---|---|
+| Model shards | `models/`**`swift-IQ3_XXS`** (uppercase model) |
+| Config | `config/`**`strata-swift-iq3_xxs`**`.json` (lowercase) |
+| Pack | `packs/`**`swift-iq3_xxs`** (lowercase) |
+
+Getting this wrong is silent in the worst way: setup creates the directory it
+wants, finds the shards absent, and starts a fresh download beside your
+pre-seed. **The authoritative answer is the first start's own log line** —
+`The model files go in /data/models/<TAG>` — where `<TAG>` maps to
+`$STRATA_MODELS_PATH/<TAG>` on the host. Confirm it before transferring 76 GB,
+or check the layout against the table below.
+
+To recover from a mismatch, stop the container and rename the directory to the
+uppercase tag. **No finish mark is needed**: setup validates a hand-placed shard
+against its own tensor directory and writes the mark itself (`#173`), so a
+correctly named, complete file is accepted as-is.
+
+Stop the container *before* renaming — it will be actively downloading into the
+directory it created:
+
+```sh
+docker stop strata && docker rm strata
+
+cd /mnt/cistern/apps/strata/models
+ls -la                              # see which directory setup made and where your files are
+rm -rf swift-IQ3_XXS                # the one setup created; confirm it holds no partial you want
+mv swift-iq3_xxs swift-IQ3_XXS
+ls -l swift-IQ3_XXS                 # sizes must be 44.90 / 38.84 GB, and 0.91 GB for the mmproj
+```
+
+Restart, and the log should skip the download and go straight to the pack step.
+
 The revision pin matters. `setup.py` reads the Hub at pinned commits, and
 `main` moves under it. Downloading from `main` risks a layout setup will not
 recognise.
@@ -215,13 +254,13 @@ recognise.
 MODELS=/mnt/cistern/apps/strata/models
 SWIFT_REV=99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d
 
-mkdir -p "$MODELS/swift-iq3_xxs"
+mkdir -p "$MODELS/swift-IQ3_XXS"
 
 # Swift 1.5 IQ3_XXS - 75.97 GB across two shards, plus its OWN vision encoder
 # (a different file from the base model's).
-curl -fL -C - --retry 3 -o "$MODELS/swift-iq3_xxs/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf" \
+curl -fL -C - --retry 3 -o "$MODELS/swift-IQ3_XXS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf" \
   "https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$SWIFT_REV/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf"
-curl -fL -C - --retry 3 -o "$MODELS/swift-iq3_xxs/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf" \
+curl -fL -C - --retry 3 -o "$MODELS/swift-IQ3_XXS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf" \
   "https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$SWIFT_REV/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
 curl -fL -C - --retry 3 -o "$MODELS/mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf" \
   "https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$SWIFT_REV/mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf"
@@ -245,7 +284,7 @@ Expected layout:
 ```
 /mnt/cistern/apps/strata/models/
 ├── mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf                    0.91 GB
-└── swift-iq3_xxs/
+└── swift-IQ3_XXS/
     ├── Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf  44.90 GB
     └── Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf  38.84 GB
 ```
@@ -294,7 +333,7 @@ ss -lntp | grep -E ':(8080|27182)\b'
 docker exec strata /opt/strata/engine/strata-device --list-devices
 
 # Both mounts landed where intended
-docker exec strata sh -c 'ls /data; ls /data/models; ls /data/models/swift-iq3_xxs'
+docker exec strata sh -c 'ls /data; ls /data/models; ls /data/models/swift-IQ3_XXS'
 
 # The engine reused the baked build rather than recompiling
 docker logs strata 2>&1 | grep -i "already built\|compiled"
