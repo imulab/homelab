@@ -215,7 +215,7 @@ OpenZFS's actual hard guidance is only to keep free space above 10% — below 4%
 free the metaslabs flip from first-fit to best-fit allocation and IOPS collapse.
 The 80% figure is community convention, not a ZFS requirement. With one model
 instead of two there is roughly 170 GiB spare, which is what makes the IQ2_XS
-hedge in section 5 affordable if you ever want it.
+hedge in section 9 affordable if you ever want it.
 
 ## 2. Pre-seed the models
 
@@ -386,6 +386,74 @@ docker logs strata 2>&1 | grep -i "STRATA_HIP_WMMA\|matrix cores"
 The health check is the image's own (`/health`, 600 s start period), so
 `docker ps` shows `healthy` once the model is loaded, and `GET /v1/status`
 reports what is running.
+
+### Reaching it by hostname, and why the API key is a separate question
+
+The direct LAN address works immediately; the Caddy hostname does **not**, and
+fails with:
+
+```json
+{"error": {"type": "forbidden", "message": "Host 'strata.absurdlab.dev' is not allowed (DNS rebinding protection). ..."}}
+```
+
+That is not a proxy fault and not an access-control failure. `server.py` refuses
+any request whose `Host` header it does not recognise, unless an API key is set,
+and an IP address is not one of the names it knows — which is exactly why the
+direct port works and the name does not. Fix it in the compose environment, not
+the config file:
+
+```
+STRATA_ALLOWED_HOSTS=strata.absurdlab.dev
+```
+
+A bare name, a leading-dot suffix (`.absurdlab.dev` covers every subdomain) or
+`*` are all accepted, comma-separated. Configuration rather than code is
+deliberate: `setup.py` regenerates the config when a setting it presets changes,
+so a value that lives only in `strata-swift-iq3_xxs.json` can be silently lost.
+
+**The error message offers three fixes and they are not equivalent.** The key
+distinction, from the source:
+
+```python
+def _authorized(self) -> bool:
+    if not svc.api_key:
+        return True          # no key configured: everything is authorized
+```
+
+```python
+if svc.api_key or host_allowed(host, svc.host_names, "*" in svc.allowed_hosts):
+```
+
+So `allowed_hosts` **only inspects a header**, which any deliberate caller sets
+freely — it exists to stop a browser on some other site being rebound to this
+server, and it protects nothing against `curl`. The API key is the actual access
+control, and it gates more than `/v1`: every control POST, `/config`,
+`/settings`, `/load`, `/unload`, `/slots` and `/metrics`. Only genuinely static
+assets (`/fonts/*`, `/web/*`) bypass it.
+
+Note the second line: **the Host check runs only when no key is set.** Adding a
+key turns it off entirely and the key becomes the whole check, so a key is not
+additive with `allowed_hosts` — it replaces it.
+
+This stack therefore ships without a key, and network placement (LAN-bound,
+reached over the proxy network) is the control. If that stops being sufficient,
+adding one is two changes, not one:
+
+1. `API_KEY=<key>` as a **plain** env var in the Dockhand panel — never the
+   key-icon secret toggle, since this stack is `restart: unless-stopped` and
+   secrets do not survive a daemon-initiated restart.
+2. An injection label on the service, or the web UI breaks — the page is served
+   through Caddy and its own `/v1` calls would start returning 401:
+
+   ```yaml
+   caddy.header_up: "Authorization \"Bearer <key>\""
+   ```
+
+   The route labels carry no `header_up` today, so nothing injects the header
+   for you.
+
+The key is useful to any client that can be configured with it, Caddy or not —
+the label exists only because the UI shares an origin with the API.
 
 ## 5. Benchmark it — your own numbers, first
 
