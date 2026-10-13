@@ -1,0 +1,58 @@
+# Hermes - Nous Research personal-agent gateway on the Strata Qwen3.8 endpoint.
+#
+# Stock image (no local Dockerfile): the official nousresearch/hermes-agent,
+# pinned by digest. The gateway is s6-supervised; a single /opt/data volume
+# holds all state (config.yaml, .env, sessions, memories, skills).
+#
+# The gateway reaches Strata container-to-container over the external proxy
+# network (http://strata:8080/v1), NOT through Caddy or DNS. The strata stack's
+# STRATA_ALLOWED_HOSTS must therefore also accept the container name `strata`
+# (already done).
+#
+# Surfaces (per grilling): email is the primary channel (configured in
+# /opt/data/.env); the web dashboard (:9119) is served through Caddy at
+# hermes.absurdlab.dev; the OpenAI-compatible API server (:8642) is keyed and
+# bound to the LAN for future tools / desktop / mobile.
+#
+# Dashboard auth is mandatory on a non-loopback bind: Hermes fails closed at
+# startup if a dashboard auth provider is missing. The bundled username/password
+# provider satisfies it on a trusted LAN.
+services:
+  hermes:
+    image: nousresearch/hermes-agent:rc.15-v0.21.7-amd64@sha256:3140cc382d3f21a18019d28a1f89efb2af21ae9f86364895ccc019c7c7f8a446
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      # Web dashboard (s6-supervised alongside the gateway).
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_HOST: 0.0.0.0
+      HERMES_DASHBOARD_PORT: "9119"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME:-operator}
+      # OpenAI-compatible API server (Open WebUI / desktop / mobile clients).
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: "8642"
+      API_SERVER_CORS_ORIGINS: ${HERMES_API_CORS_ORIGINS:-}
+      # Secrets are NOT set here. HERMES_DASHBOARD_BASIC_AUTH_PASSWORD,
+      # API_SERVER_KEY, and the email credentials live in /opt/data/.env (the
+      # mounted volume) so they survive a daemon-initiated restart (decision #8).
+    ports:
+      # Direct LAN fallback (house pattern). Caddy serves the canonical
+      # https://hermes.absurdlab.dev dashboard route over the external proxy
+      # network; the hostname resolves only via the photonicat dnsmasq hijack.
+      # 9119 and 8642 are uncommon and away from every port in use here.
+      - "${HERMES_BIND_ADDRESS:-192.168.20.11}:9119:9119"
+      - "${HERMES_BIND_ADDRESS:-192.168.20.11}:8642:8642"
+    volumes:
+      - "${HERMES_DATA_PATH:?HERMES_DATA_PATH must be set - see .env.example}:/opt/data"
+    labels:
+      caddy: hermes.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 9119}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

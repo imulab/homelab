@@ -1,0 +1,36 @@
+# /opt/data/config.yaml - Hermes configuration template.
+# Copy this into $HERMES_DATA_PATH/config.yaml before the first Deploy, then
+# fill the two <...> placeholders. Items marked "verify" are best-known from the
+# research notes (research/hermes-*), not yet confirmed on a live box.
+
+# ---- Model: point Hermes at Strata over the Docker proxy network ------------
+model:
+  provider: custom
+  base_url: "http://strata:8080/v1"      # container-to-container, no Caddy/TLS
+  default: "<MODEL_ID>"                  # READ from Strata GET /v1/status at
+                                         # deploy time - do not guess
+  api_mode: chat_completions
+  context_length: 262144                 # satisfies Hermes's >=64k local-server gate
+  supports_vision: true                  # Strata runs VISION=cpu
+
+# ---- Email: admin tier (operator = admin; family added later) ---------------
+# Research flagged the exact nesting as undetermined (gateway.platforms.email
+# vs top-level platforms.email). Confirm with /whoami at bring-up; adjust if the
+# tier does not take effect.
+gateway:
+  platforms:
+    email:
+      extra:
+        allow_admin_from: ["<your email>"]          # you = admin
+        user_allowed_commands: [status, model, usage]   # family (added later) = regular
+
+# ---- Tool-loop guardrail (unattended gateway) -------------------------------
+# Hard-stops runaway tool loops in unattended (gateway/email) sessions. Keep on.
+tool_loop_guardrails:
+  non_interactive_hard_stop_enabled: true
+
+# ---- Exec posture -----------------------------------------------------------
+# Exec/terminal is enabled for admins only via the tier above; dangerous
+# commands prompt for /approve in chat. Non-admins never get exec. No config
+# needed beyond the tier unless Hermes exposes a separate exec-approval knob
+# (verify against the current docs at bring-up).
