@@ -294,20 +294,27 @@ truncation check. The directory name matches what `--gguf-dir` would expect, so
 if a hand-placed shard is rejected you can point setup at it explicitly.
 
 That is the whole pre-seed: two shards plus the vision encoder at the models
-root. Everything else in `/data` is either derived or built on first start, and
-none of it can be pre-fetched:
+root. Everything else in `/data` is derived on first start:
 
-| Artefact | Why it is not pre-seedable |
+| Artefact | Why it is not part of the pre-seed |
 |---|---|
-| **MTP draft layer** (~5 GB) | A *build*, not a download. `tools/mtp_fetch.py` range-requests MTP tensors out of `Qwen/Qwen3.8-Flash-Next`'s 360 GB BF16 checkpoint, then `mtp_pack.py` and `mtp_rt.py` convert them into the runtime form the engine loads. The runtime files are not published anywhere, so there is no URL to pre-fetch. This is the **last network activity** in the whole flow, and it runs in step 6. |
+| **MTP draft layer** (~5 GB) | The only one of the three that *is* a network fetch, but not one you can `curl`. `mtp_fetch.py` pulls 31 tensors as byte ranges out of `Qwen/Qwen3.8-Flash-Next`'s 360 GB BF16 checkpoint, then `mtp_pack.py` and `mtp_rt.py` convert them into the runtime form the engine actually loads. **Those runtime files are not published anywhere.** Pre-seeding is possible but means running Strata's own three-stage pipeline outside the container — a host Python environment or a throwaway container, the right pinned revision, the `q2_0` expert quantisation, and a bind mount at `/data/mtp`. That is real work to remove 5 GB from the critical path, which is why it is deferred rather than impossible. It is the **last network activity** in the flow, in step 6. |
 | **Pack** (`packs/swift-iq3_xxs`) | Derived from the shards by `tools/iq_pack.py`. For a native IQ pack this is seconds and needs no network at all — it indexes tensors and leaves the experts in the shard. |
 | **n-gram/PLE table** (shard 2, 38.84 GB) | *Already covered* — it is the second shard you pre-seed, and the engine reads it from the Optane during inference. Nothing to fetch. |
 
-Setup has no `--download-only` flag, and the MTP fetch is resumable on its own
-(a `.part` file plus `Range: bytes=<have>-`, 30 retries with backoff), so a
-failure there is not costly. Expect the network to keep moving *after* the log
-says `model files present` — that is step 6's MTP fetch, and it is the only
-thing left that talks to the internet.
+**Expect the network to keep moving after the log says `model files present`.**
+That is step 6's MTP fetch, and it is the only thing left that talks to the
+internet. Setup has no `--download-only` flag.
+
+If that fetch is interrupted, the recovery is **per tensor, not per byte**: each
+tensor is digest-checked against the pinned revision and kept once it passes, so
+a re-run re-fetches only what is missing. There is no `.part` file here —
+`mtp_fetch.py` uses `Range: bytes=<start>-<end>` with 4 attempts and exponential
+backoff per tensor, so a partially-read tensor restarts from its beginning
+(3.4 GB worst case, not the whole layer). A flaky link therefore costs time, not
+correctness. On a link that resets long transfers, `HF_ENDPOINT` (for example
+`https://hf-mirror.com`) is honoured by this tool and the SHA-256 checks still
+apply.
 
 ## 3. Deploy
 
