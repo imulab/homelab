@@ -16,8 +16,10 @@ the LAN; voice and smart-home are a later slice.
 
 ## 1. Prerequisites
 
-- Strata deployed and `STRATA_ALLOWED_HOSTS` already includes the container name
-  `strata` (done). Hermes reaches it container-to-container; no Caddy hop.
+- Strata deployed and `STRATA_ALLOWED_HOSTS` includes the container name `strata`
+  (`strata.absurdlab.dev,strata` in truenas/apps/strata/.env.example). Hermes
+  reaches it container-to-container; no Caddy hop. Confirm the live Dockhand
+  value matches before the first Deploy.
 - The iCloud mailbox (section 2) and the dataset (section 3) exist before the
   first Deploy.
 
@@ -61,6 +63,8 @@ Place two files in `puddle/apps/hermes/data/`:
   `EMAIL_IMAP_PORT=993`, `EMAIL_SMTP_PORT=587`, `EMAIL_POLL_INTERVAL=15`,
   `EMAIL_ALLOWED_USERS`, `API_SERVER_KEY`, `HERMES_DASHBOARD_BASIC_AUTH_PASSWORD`,
   `HERMES_DASHBOARD_BASIC_AUTH_SECRET`.
+- `SOUL.md` — optional persona file in `/opt/data`; name the agent "Hermes" here
+  (spec #8). Hermes reads it as the agent's identity/personality.
 
 **Verify at bring-up** whether Hermes reads the three gateway/dashboard secrets
 from `/opt/data/.env` or requires them as process env; if the latter, set them as

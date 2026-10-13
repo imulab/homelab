@@ -7,7 +7,7 @@
 # The gateway reaches Strata container-to-container over the external proxy
 # network (http://strata:8080/v1), NOT through Caddy or DNS. The strata stack's
 # STRATA_ALLOWED_HOSTS must therefore also accept the container name `strata`
-# (already done).
+# (see truenas/apps/strata/.env.example).
 #
 # Surfaces (per grilling): email is the primary channel (configured in
 # /opt/data/.env); the web dashboard (:9119) is served through Caddy at
