@@ -118,6 +118,15 @@ services:
       # engine's own start-time free-RAM check is the only backstop - which is
       # the next line's job.
       LOW_RAM: ${STRATA_LOW_RAM:-off}
+      # The Host header names this server answers to. Without an API key,
+      # server.py rejects any request whose Host is not recognised ("DNS
+      # rebinding protection"), which is what makes the Caddy hostname fail
+      # while the direct LAN IP works - the Host check never sees the IP as a
+      # name. This is NOT an access control: it only checks a header, so a
+      # deliberate caller ignores it entirely. Network placement is the actual
+      # control here. Accepts a name, a leading-dot suffix (".absurdlab.dev"
+      # covers every subdomain), or "*" (which warns at start).
+      STRATA_ALLOWED_HOSTS: ${STRATA_ALLOWED_HOSTS:-}
       # ---------------------------------------------------------------------
       # Engine tuning switches (v0.1.41+). These are read by the engine process
       # itself; serve/server.py forwards the container environment through, so
