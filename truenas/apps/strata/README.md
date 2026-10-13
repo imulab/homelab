@@ -293,11 +293,21 @@ Sizes are the Hub's LFS metadata for this revision, so they double as a
 truncation check. The directory name matches what `--gguf-dir` would expect, so
 if a hand-placed shard is rejected you can point setup at it explicitly.
 
-**Not pre-seedable:** the MTP draft layer (~5.2 GB, pulled by HTTP Range
-requests from `Qwen/Qwen3.8-Flash-Next`'s 360 GB BF16 checkpoint) and the pack
-(~50 GB, built from the shards by `tools/iq_pack.py` into
-`packs/swift-iq3_xxs`). Both run automatically on first start and cost CPU
-minutes, not a large download. Setup has no `--download-only` flag.
+That is the whole pre-seed: two shards plus the vision encoder at the models
+root. Everything else in `/data` is either derived or built on first start, and
+none of it can be pre-fetched:
+
+| Artefact | Why it is not pre-seedable |
+|---|---|
+| **MTP draft layer** (~5 GB) | A *build*, not a download. `tools/mtp_fetch.py` range-requests MTP tensors out of `Qwen/Qwen3.8-Flash-Next`'s 360 GB BF16 checkpoint, then `mtp_pack.py` and `mtp_rt.py` convert them into the runtime form the engine loads. The runtime files are not published anywhere, so there is no URL to pre-fetch. This is the **last network activity** in the whole flow, and it runs in step 6. |
+| **Pack** (`packs/swift-iq3_xxs`) | Derived from the shards by `tools/iq_pack.py`. For a native IQ pack this is seconds and needs no network at all — it indexes tensors and leaves the experts in the shard. |
+| **n-gram/PLE table** (shard 2, 38.84 GB) | *Already covered* — it is the second shard you pre-seed, and the engine reads it from the Optane during inference. Nothing to fetch. |
+
+Setup has no `--download-only` flag, and the MTP fetch is resumable on its own
+(a `.part` file plus `Range: bytes=<have>-`, 30 retries with backoff), so a
+failure there is not costly. Expect the network to keep moving *after* the log
+says `model files present` — that is step 6's MTP fetch, and it is the only
+thing left that talks to the internet.
 
 ## 3. Deploy
 
