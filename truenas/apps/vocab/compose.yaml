@@ -1,0 +1,42 @@
+# vocab: vocabulary flash cards with FSRS scheduling and cached pronunciation.
+#
+# The image is published to GHCR by the alfredapps repository workflow
+# (.github/workflows/vocab-image.yml). Dockhand supplies the image tag and the
+# host-specific values documented in the matching .env.example. The ElevenLabs
+# key is the only secret and lives in Dockhand's encrypted stack environment.
+services:
+  vocab:
+    # Pinned by default. Bump VOCAB_IMAGE_TAG in Dockhand to deploy a new build.
+    image: ghcr.io/imulab/alfredapps-vocab:${VOCAB_IMAGE_TAG:-sha-0a27281}
+    container_name: vocab
+    restart: unless-stopped
+    # Matches the image default; the /data dataset must be writable by this identity.
+    user: "${VOCAB_UID:-100}:${VOCAB_GID:-101}"
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      PORT: 3001
+      DB_FILE_NAME: /data/vocab.db
+      # Secret: set the real value in Dockhand with the key-icon toggle ON.
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:?ELEVENLABS_API_KEY must be set in Dockhand as a secret}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-Xb7hH8MSUJpSbSDYk0k2}
+      ELEVENLABS_MODEL_ID: ${ELEVENLABS_MODEL_ID:-eleven_multilingual_v2}
+    volumes:
+      - "${VOCAB_DATA_PATH:?VOCAB_DATA_PATH must be set}:/data"
+    # The image ships its own healthcheck (wget against port 3001), so none is
+    # duplicated here. The container writes only /data and /tmp.
+    read_only: true
+    tmpfs:
+      - /tmp:rw,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    labels:
+      caddy: vocab.absurdlab.dev
+      caddy.reverse_proxy: "{{upstreams 3001}}"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
