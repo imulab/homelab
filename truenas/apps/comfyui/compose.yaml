@@ -8,9 +8,15 @@
 #   2.9.1). Official ComfyUI ships no Dockerfile; AMD's rocm/comfyui is
 #   stale (last pushed 2026-05) and ~23 GB. House rule pins the dated tag;
 #   a newer dated tag is the update path (core updates also arrive in-app
-#   via the bundled ComfyUI-Manager). If PyTorch 2.9.1 breaks a specific
-#   custom node, swap to the other ROCm line, yanwk/comfyui-boot:rocm-
-#   20260930 (upstream wheels, PyTorch 2.13), and re-test.
+#   via the bundled ComfyUI-Manager, but live in the container layer and
+#   are lost on the next recreate). Bundled core, read from the image's
+#   comfyui_version.py on 2026-11-07: 20260930 = v0.38.0, 20261104 =
+#   v0.44.0. No tag carries v0.44.1 or v0.44.2: both exist upstream as
+#   git tags only, and this image's CI rebuilds when GitHub publishes a
+#   release, so the core stays on v0.44.0 until the next one (v0.45.x).
+#   If PyTorch 2.9.1 breaks a specific custom node, swap to the other
+#   ROCm line, yanwk/comfyui-boot:rocm-20261104 (openSUSE Tumbleweed,
+#   upstream wheels, PyTorch 2.13), and re-test.
 # - user: root, breaking the dedicated-identity house pattern (3001
 #   jellyfin, 3002 immich, 3003 ipmideck). The image is root-by-design:
 #   venv at /opt/venv, app root at /root/ComfyUI, caches under /root/.cache.
@@ -48,7 +54,7 @@
 #   download prompts; everything else via the bundled Manager.
 services:
   comfyui:
-    image: yanwk/comfyui-boot:rocm7-20260930
+    image: yanwk/comfyui-boot:rocm7-20261104
     container_name: comfyui
     # Does NOT auto-start. One GPU and no VRAM isolation between ROCm
     # processes means a reboot must bring back exactly one tenant, and that is
@@ -108,6 +114,9 @@ services:
       # persists. Note: custom nodes that pip-install into /opt/venv lose
       # those installs on container recreate (venv deliberately not
       # persisted so image updates win); reinstall via Manager after a bump.
+      # The seed never overwrites existing files, so node packs already in
+      # the custom_nodes bind keep their old commits and only new files
+      # land; update them via Manager after a bump as well.
       - "${COMFYUI_MODELS_PATH:?COMFYUI_MODELS_PATH must be set}:/root/ComfyUI/models"
       - "${COMFYUI_INPUT_PATH:?COMFYUI_INPUT_PATH must be set}:/root/ComfyUI/input"
       - "${COMFYUI_OUTPUT_PATH:?COMFYUI_OUTPUT_PATH must be set}:/root/ComfyUI/output"
