@@ -9,8 +9,8 @@
 # STRATA_ALLOWED_HOSTS must therefore also accept the container name `strata`
 # (see truenas/apps/strata/.env.example).
 #
-# Surfaces (per grilling): email is the primary channel (configured in
-# /opt/data/.env); the web dashboard (:9119) is served through Caddy at
+# Surfaces (per grilling): email is the primary channel (configured via Dockhand
+# env below); the web dashboard (:9119) is served through Caddy at
 # hermes.absurdlab.dev; the OpenAI-compatible API server (:8642) is keyed and
 # bound to the LAN for future tools / desktop / mobile.
 #
@@ -30,14 +30,24 @@ services:
       HERMES_DASHBOARD_HOST: 0.0.0.0
       HERMES_DASHBOARD_PORT: "9119"
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME:-operator}
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?required - set in Dockhand}"
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: "${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?required - set in Dockhand}"
       # OpenAI-compatible API server (Open WebUI / desktop / mobile clients).
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
+      API_SERVER_KEY: "${API_SERVER_KEY:?required - set in Dockhand}"
       API_SERVER_CORS_ORIGINS: ${HERMES_API_CORS_ORIGINS:-}
-      # Secrets are NOT set here. HERMES_DASHBOARD_BASIC_AUTH_PASSWORD,
-      # API_SERVER_KEY, and the email credentials live in /opt/data/.env (the
-      # mounted volume) so they survive a daemon-initiated restart (decision #8).
+      # Email channel (iCloud IMAP/SMTP). Secrets and the reach gate are set in
+      # Dockhand (key-icon for the secrets), not in /opt/data/.env.
+      EMAIL_ADDRESS: "${EMAIL_ADDRESS:?required - set in Dockhand}"
+      EMAIL_PASSWORD: "${EMAIL_PASSWORD:?required - set in Dockhand}"
+      EMAIL_IMAP_HOST: ${EMAIL_IMAP_HOST:-imap.mail.me.com}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-smtp.mail.me.com}
+      EMAIL_IMAP_PORT: ${EMAIL_IMAP_PORT:-993}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
+      EMAIL_POLL_INTERVAL: ${EMAIL_POLL_INTERVAL:-15}
+      EMAIL_ALLOWED_USERS: "${EMAIL_ALLOWED_USERS:?required - set in Dockhand}"
     ports:
       # Direct LAN fallback (house pattern). Caddy serves the canonical
       # https://hermes.absurdlab.dev dashboard route over the external proxy
