@@ -69,8 +69,29 @@ one run per length, same repeated-text prompts. The 1K row includes first-reques
 
 The expert cache held 15265 of 24576 slots, 99% hit (measured here).
 
-Strata 0.2.17 on this box is not yet measured. These 0.1.41 numbers are the comparison point. Every
+Strata 0.2.17 on this box was preflighted once on 2026-11-22, below. It is not benchmarked yet. Every
 upstream number in this file is labelled upstream-measured.
+
+### Preflight on this box, 2026-11-22
+
+Verification data, not a benchmark. Measured here, one run unless stated.
+
+- The stack came up: engine 0.1.63, model id `swift-1.5-iq3_s`, 262144 context, API key enforced, vision
+  reader on the card, shards read from `/models/swift-IQ3_S`, `/data` migrated to `Strata-data`, serving
+  about 2 minutes after start once the volume was prepared.
+- Start-log defaults: PLE table locked in RAM in 27.5 s, PCIe probe 14.3 GB/s giving pcie_frac 0.11,
+  expert cache 10178 slots in 19.31 GiB, `--batch 4` slot sessions taking 3.79 GiB of VRAM from that
+  cache, vision reader 956 MiB, fused int8 prompt kernels on, WMMA on.
+- The first two requests after load are settling artifacts (decode 8.8 and 5.5 tok/s). Do not benchmark
+  the first minute.
+- Settled, fresh prompts: 1086 tokens read at 296.1 tok/s with 29.4 tok/s decode; 8451 at 1517.1 with
+  28.9; 34062 at 1752.3 with 26.1.
+- Cache-warm repeats decoded at 84.3, 75.6 and 97.3 tok/s. Two fresh 512-token generations decoded at
+  51.8 and 25.0 tok/s. Decode is not stable in these short runs, so no decode claim is made here.
+
+Against the 0.1.41 table above, prefill is ahead at 8K (+71%) and 32K (+15%). Decode needs a sustained
+run after deploy. The first knob to test is `PARALLEL=1`, which gives the 3.79 GiB of batch-session VRAM
+back to the expert cache; `TUNE=quick` is the sanctioned tuning path.
 
 ### 0.2.17 engine defaults on this card
 

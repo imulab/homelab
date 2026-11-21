@@ -25,7 +25,7 @@ Baseline, measured here on 2026-11-21 on v0.1.41 (Swift 1.5 IQ3_XXS, 262144 cont
 | 8,451 | 9,510 | 888.6 | 128 | 51.3 |
 | 34,062 | 22,282 | 1,528.7 | 64 | 53.7 |
 
-The 1K row carries first-request warm-up. Expert cache was 15,265 of 24,576 slots at 99% hit. These are the comparison point; **v0.2.17 on this box is not measured yet**, and no 0.2.17 speed claim is made here until it is.
+The 1K row carries first-request warm-up. Expert cache was 15,265 of 24,576 slots at 99% hit. These are the comparison point. **v0.2.17 was preflighted by hand on 2026-11-22, not benchmarked.** Fresh-prompt prefill measured 296.1 tok/s at 1K, 1,517.1 at 8K and 1,752.3 at 32K, ahead of the 0.1.41 row at 8K (+71%) and 32K (+15%). Decode in the same short runs ranged from 26 to 97 tok/s with no stable value, so no 0.2.17 decode claim is made here; that needs a sustained run after deploy. The preflight also left `/data` in the new layout with the IQ3_S pack and MTP layer prepared, so the first Dockhand start is fast, and it means a 0.1.41 rollback must move `packs` and `mtp` back out of `Strata-data` first.
 
 Open after the switch:
 
