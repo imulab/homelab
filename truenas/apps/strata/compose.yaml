@@ -86,11 +86,10 @@ services:
       # key-icon secret toggle: secrets do not survive a daemon-initiated
       # restart and this stack is restart: unless-stopped.
       API_KEY: ${STRATA_API_KEY:?STRATA_API_KEY must be set - see .env.example}
-      # In-container path to the shards folder. Left empty on purpose: the
-      # first start downloads the model (~84 GB) into /data. Set
-      # STRATA_MODEL_PATH=/models/swift-IQ3_S after pre-seeding the shards on
-      # the Optane to cut a cold start from about 4-5 min to about 1 min.
-      MODEL_PATH: ${STRATA_MODEL_PATH:-}
+      # In-container path to the shards folder. The default is the Optane
+      # pre-seed. Set STRATA_MODEL_PATH to empty to let the container download
+      # the model instead (~84 GB into /data on first start).
+      MODEL_PATH: ${STRATA_MODEL_PATH:-/models/swift-IQ3_S}
       # auto | mtp | dflash2 | off. `auto` takes what the model ships with.
       DRAFTING: ${STRATA_DRAFTING:-auto}
       # Advanced engine settings, space separated, same as `strata launch --set`.

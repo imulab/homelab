@@ -2,9 +2,8 @@
 
 One Strata endpoint on the TrueNAS box, now on Strata 0.2.17 (engine 0.1.63) with the published
 `ghcr.io/niko1221/strata:0.2.17-rocm-gfx120x` image. It serves Qwen3.8-Flash-Next Swift 1.5 IQ3_S at
-262144 context on one Radeon AI PRO R9700 (RDNA4, gfx1201) in Docker. The engine ships in the image. On
-the first start the container downloads the model into `/data`; pre-seeding it on the Optane is an
-optional Day-2 step that shortens a cold start. All inference state lives in the 251 GiB of RAM.
+262144 context on one Radeon AI PRO R9700 (RDNA4, gfx1201) in Docker. The engine ships in the image and the model shards are pre-seeded on the Optane, so the first
+start downloads only the MTP drafter. All inference state lives in the 251 GiB of RAM.
 
 | | |
 |---|---|
@@ -47,9 +46,8 @@ cap must exceed the plan or the start is OOM-killed. The stack sets `stop_grace_
 2. Set the env panel values. `STRATA_API_KEY` is required (`openssl rand -hex 24`). `STRATA_MODEL=IQ3_S`.
    The rest are already present or defaulted. Keep the key-icon toggle OFF so the key is a plain env var.
 3. Deploy.
-4. Watch `docker logs -f strata`. Expect the model download first, about 89.7 GB for the model, the MTP
-   drafter and the picture reader at roughly 11 MB/s, so about 2 to 2.5 hours, then the load. The image's
-   healthcheck allows 2 hours, so `docker ps` shows `starting` throughout.
+4. Watch `docker logs -f strata`. Expect the MTP drafter download (5.2 GB, about 8 min at the measured
+   11 MB/s) and then the model load from the Optane, about 10 to 15 min in total on the first start.
 5. Verify with the commands in the Verify section.
 
 ### Rollback
@@ -133,16 +131,29 @@ Upstream says IQ3_S matches the top token of Q8_0 87.7% of the time.
 | /data/install | run settings, logs |
 | /data/home | new in 0.2.x |
 
-`STRATA_MODEL_PATH` is empty by default, so the container downloads the model into `/data/Strata-data` on
-first start. Upstream's plan estimates 83.6 GB for the model, plus 5.2 GB for the MTP drafter and 0.9 GB
-for the picture reader. The image's healthcheck allows 2 hours for this.
+The shards are pre-seeded on the Optane at `/mnt/cistern/apps/strata/models/swift-IQ3_S`, mounted
+read-only at `/models`, and `STRATA_MODEL_PATH=/models/swift-IQ3_S` names the folder that holds them
+directly. The picture reader sits in the same folder, so `VISION=on` needs no download. A cold start reads
+88.8 GB from the Optane in about a minute. Runtime speed does not depend on the mount, because the engine
+copies the experts and the n-gram table into RAM at start.
 
-`/mnt/cistern/apps/strata/models` is mounted read-only at `/models` for the optional Optane path. Pre-seed
-the two shards into `/mnt/cistern/apps/strata/models/swift-IQ3_S`, 44.9 GB and 38.8 GB, pinned to Hugging
-Face revision `99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d`, then set
-`STRATA_MODEL_PATH=/models/swift-IQ3_S` and Deploy again. A cold start then reads 88.8 GB from the Optane
-(about 1 min) instead of the spinning pool (about 4 to 5 min). Runtime speed is the same either way,
-because the engine copies the experts and the n-gram table into RAM at start.
+The pre-seed is pinned to Hugging Face revision `99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d`:
+
+```sh
+MODELS=/mnt/cistern/apps/strata/models/swift-IQ3_S
+REV=99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d
+REPO=https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$REV
+mkdir -p "$MODELS"
+curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf" \
+  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf"
+curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf" \
+  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+cp /mnt/cistern/apps/strata/models/mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf "$MODELS/"
+```
+
+Expected sizes are 44,900,816,736 and 38,842,920,384 bytes. To download instead of pre-seeding, set
+`STRATA_MODEL_PATH` empty before Deploy; the container then fetches about 89.7 GB into `/data` on first
+start.
 
 ## Access
 
@@ -189,9 +200,8 @@ docker stop strata
 docker start strata
 ```
 
-A clean start reuses the saved preset and is serving again in about a minute when the model is on the
-Optane, and in about 4 to 5 minutes when it is on puddle. `docker stop` runs `strata launch --stop`, which
-drains and frees the graphics memory. The 2m grace period covers it.
+A clean start reuses the saved preset and is serving again in about a minute. `docker stop` runs
+`strata launch --stop`, which drains and frees the graphics memory. The 2m grace period covers it.
 
 ## Benchmark
 
@@ -228,7 +238,6 @@ a model or engine change. The result is kept in the preset.
   reproduced yet. This is the one open performance question, settled by measurement.
 - **Delete the old IQ3_XXS shards** from the Optane after the 0.2.17 stack is verified. Keep them until
   then for rollback.
-- **Optane pre-seed (optional).** The first deploy downloads the model into `/data` on puddle. If cold
-  starts matter, pre-seed the two IQ3_S shards into `/mnt/cistern/apps/strata/models/swift-IQ3_S`, set
-  `STRATA_MODEL_PATH=/models/swift-IQ3_S`, and Deploy again.
+- **Download instead of pre-seed.** Set `STRATA_MODEL_PATH` empty before Deploy and the container fetches
+  about 89.7 GB into `/data`. The image's 2 hour health window covers it.
 - **Hermes key.** If Hermes is re-enabled, set the same key in its `api_key` field.
