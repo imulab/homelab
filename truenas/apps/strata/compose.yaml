@@ -87,9 +87,10 @@ services:
       # restart and this stack is restart: unless-stopped.
       API_KEY: ${STRATA_API_KEY:?STRATA_API_KEY must be set - see .env.example}
       # In-container path to the shards folder. The default is the Optane
-      # pre-seed. Set STRATA_MODEL_PATH to empty to let the container download
-      # the model instead (~84 GB into /data on first start).
-      MODEL_PATH: ${STRATA_MODEL_PATH:-/models/swift-IQ3_S}
+      # pre-seed of the abliterated (uncensored) Swift 1.5 build. Set
+      # STRATA_MODEL_PATH to empty to let the container download the model
+      # instead (~84 GB into /data on first start).
+      MODEL_PATH: ${STRATA_MODEL_PATH:-/models/sc117-swift-IQ3_S}
       # auto | mtp | dflash2 | off. `auto` takes what the model ships with.
       DRAFTING: ${STRATA_DRAFTING:-auto}
       # Advanced engine settings, space separated, same as `strata launch --set`.

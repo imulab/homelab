@@ -1,13 +1,13 @@
 # Strata deployment runbook
 
 One Strata endpoint on the TrueNAS box, now on Strata 0.2.17 (engine 0.1.63) with the published
-`ghcr.io/niko1221/strata:0.2.17-rocm-gfx120x` image. It serves Qwen3.8-Flash-Next Swift 1.5 IQ3_S at
+`ghcr.io/niko1221/strata:0.2.17-rocm-gfx120x` image. It serves the abliterated Swift 1.5 IQ3_S (SC117) at
 262144 context on one Radeon AI PRO R9700 (RDNA4, gfx1201) in Docker. The engine ships in the image and the model shards are pre-seeded on the Optane, so the first
 start downloads only the MTP drafter. All inference state lives in the 251 GiB of RAM.
 
 | | |
 |---|---|
-| Model | Swift 1.5 IQ3_S |
+| Model | Swift 1.5 IQ3_S, abliterated (SC117) |
 | Context | 262144 |
 | KV | int8 |
 | Vision | on |
@@ -16,6 +16,9 @@ start downloads only the MTP drafter. All inference state lives in the 251 GiB o
 | Engine | 0.1.63 |
 | API key | mandatory |
 | Auto-start | yes (restart: unless-stopped) |
+
+The deployed build is the uncensored SC117 abliteration of the same Swift 1.5 GSQ-RCO IQ3_S, so the model
+choice below is unchanged and the two builds are interchangeable through `STRATA_MODEL_PATH`.
 
 Swift 1.5 is kept over the base model because it thinks shorter, which suits the generalist plus
 execution-only coding delegation role. IQ3_S is the quality tier. Upstream calls it "best; matches the
@@ -52,9 +55,13 @@ cap must exceed the plan or the start is OOM-killed. The stack sets `stop_grace_
 
 ### Rollback
 
-The old image `strata-hip:local` and the old IQ3_XXS shards are still on the box. To go back, point the
-stack at the old image and move the old packs and mtp back out of `/data/Strata-data`. The 0.1.x image
-reads `/data/models`, `/data/packs` and `/data/mtp`, not `/data/Strata-data`.
+The old image `strata-hip:local` is still on the box, and the IQ3_XXS shards are archived at
+`/mnt/puddle/apps/strata/models-archive/swift-IQ3_XXS` because the Optane was needed for the abliterated
+pre-seed. To go back to the old engine, copy them to `/mnt/cistern/apps/strata/models/swift-IQ3_XXS`, point
+the stack at the old image, and move the old packs and mtp back out of `/data/Strata-data`. The 0.1.x image
+reads `/data/models`, `/data/packs` and `/data/mtp`, not `/data/Strata-data`. To go back only to the censored
+Swift build, set `STRATA_MODEL_PATH=/models/swift-IQ3_S`; those shards stay on the Optane until the
+abliterated build is verified.
 
 ### Measured on this box, 0.1.41, the comparison point
 
@@ -129,6 +136,28 @@ experts in VRAM.
 
 Q8_0 now fits in RAM (~136 GB) but is slower and needs a 188 GB download, so it is not used.
 
+### Uncensored variant
+
+The deployed shards are the abliterated counterpart of the same model:
+[SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF).
+It is the same Swift 1.5 GSQ-RCO IQ3_S with the refusal direction removed from 144 residual-writing tensors
+across all 48 layers, and the other 1,080 tensors are byte-identical to upstream. The repo's own measurements
+say Swift's reasoning efficiency survives and the ablation costs about 2% decode on IQ2_XS. Strata sees an
+ordinary GSQ-RCO pack, so no patched engine is needed.
+
+Two Swift-specific traps from that repo apply. `--ple-gguf` must point at shard 1 because Swift keeps the PLE
+table there, and the run config already does. The native pack must be rebuilt for the abliterated tensor
+offsets, so delete `/data/Strata-data/packs/swift-iq3_s` before the first start with the new shards and let
+setup rebuild it.
+
+The start log reports the shard size and SHA-256 difference from the official Swift 1.5 files and uses them
+anyway, because the own-file path accepts a complete GGUF as another version or fine-tune. That warning is
+expected. Set `STRATA_MODEL_PATH=/models/swift-IQ3_S` and delete the pack again to switch back to the
+censored build.
+
+License: the Swift Open License v1.0 and the Qwen Community License carry over. This is an independent
+community build, not affiliated with UkisAI or Strata.
+
 ### Unsloth 4 to 8 bit tiers
 
 For the record. None of these is used here.
@@ -152,29 +181,29 @@ Upstream says IQ3_S matches the top token of Q8_0 87.7% of the time.
 | /data/install | run settings, logs |
 | /data/home | new in 0.2.x |
 
-The shards are pre-seeded on the Optane at `/mnt/cistern/apps/strata/models/swift-IQ3_S`, mounted
-read-only at `/models`, and `STRATA_MODEL_PATH=/models/swift-IQ3_S` names the folder that holds them
+The shards are pre-seeded on the Optane at `/mnt/cistern/apps/strata/models/sc117-swift-IQ3_S`, mounted
+read-only at `/models`, and `STRATA_MODEL_PATH=/models/sc117-swift-IQ3_S` names the folder that holds them
 directly. The picture reader sits in the same folder, so `VISION=on` needs no download. A cold start reads
-88.8 GB from the Optane in about a minute. Runtime speed does not depend on the mount, because the engine
+83.5 GB from the Optane in about a minute. Runtime speed does not depend on the mount, because the engine
 copies the experts and the n-gram table into RAM at start.
 
-The pre-seed is pinned to Hugging Face revision `99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d`:
+The pre-seed is pinned to Hugging Face revision `3db919a964b1f0ae0d1000ba7be90b3e38b1f7a3`:
 
 ```sh
-MODELS=/mnt/cistern/apps/strata/models/swift-IQ3_S
-REV=99bb8f7f95c7aa7b24a36a7786a4f657b30f5d3d
-REPO=https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF/resolve/$REV
+MODELS=/mnt/cistern/apps/strata/models/sc117-swift-IQ3_S
+REV=3db919a964b1f0ae0d1000ba7be90b3e38b1f7a3
+REPO=https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF/resolve/$REV
 mkdir -p "$MODELS"
-curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf" \
-  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00001-of-00002.gguf"
-curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf" \
-  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_S-00002-of-00002.gguf"
+curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf" \
+  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf"
+curl -fL -C - --retry 3 -o "$MODELS/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf" \
+  "$REPO/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf"
 cp /mnt/cistern/apps/strata/models/mmproj-Swift-Qwen3.8-Flash-Next-BF16.gguf "$MODELS/"
 ```
 
-Expected sizes are 44,900,816,736 and 38,842,920,384 bytes. To download instead of pre-seeding, set
-`STRATA_MODEL_PATH` empty before Deploy; the container then fetches about 89.7 GB into `/data` on first
-start.
+Expected sizes are 44,849,330,016 and 38,699,929,024 bytes. Both SHA-256 values were verified against the
+Hugging Face LFS pointers on 2026-11-22. To download instead of pre-seeding, set `STRATA_MODEL_PATH` empty
+before Deploy; the container then fetches about 89.7 GB into `/data` on first start.
 
 ## Access
 

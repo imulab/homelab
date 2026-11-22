@@ -32,7 +32,17 @@ Open after the switch:
 - **The Linux `rx9070` package uses hipBLASLt 1.2.0 with no gfx1201 tuning table.** Upstream measured tuning at 1.2.0 at 0 to 3%, within noise, so this may cost nothing. The hand-built 0.1.41 image used ROCm 7.2.4 with the 1.2.2 table, which was worth 638 to 1,177 tok/s at 32K prompt on an R9700. The 32K prefill comparison above settles whether a source build is needed. It was rejected for the first deploy as the larger change.
 - **Route tail skip is off by default in 0.2.17 because it changed answers.** `STRATA_SET="STRATA_ROUTE_TAIL_SKIP=7"` opts back in, at a quality cost. Leave it off until there is a reason.
 - **Tuning is per model and per box.** `TUNE=quick` measures once and saves the preset; `RETUNE=1` tunes again after a model or engine change. Do it after the baseline A/B, not during the first deploy.
-- **Rollback is intact.** The old `strata-hip:local` image and the IQ3_XXS shards remain on the box. Rolling back also needs the old `/data/packs` and `/data/mtp` moved back out of `/data/Strata-data`, because 0.1.x does not read the new layout.
+- **Rollback needs the archive.** The old `strata-hip:local` image remains, and the IQ3_XXS shards are archived at `/mnt/puddle/apps/strata/models-archive/swift-IQ3_XXS` because the Optane was needed for the abliterated pre-seed. Rolling back also needs them copied back to `/mnt/cistern/apps/strata/models/`, and the old `/data/packs` and `/data/mtp` moved back out of `/data/Strata-data`, because 0.1.x does not read the new layout.
+
+## Uncensored variant (2026-11-22)
+
+The deployed model is now the abliterated Swift 1.5 IQ3_S from [SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF). It is the exact counterpart of the deployed fine-tune: 144 residual-writing tensors abliterated across all 48 layers, the other 1,080 tensors byte-identical, Swift's reasoning efficiency preserved per the repo's measurements, and about 2% decode cost measured on IQ2_XS. It keeps IQ3_S, vision and the MTP drafter, and Strata sees an ordinary GSQ-RCO pack, so no patched engine is needed.
+
+The alternatives were rejected. Strata ships a 480 KB refusal-direction control vector, but its own docs say it is for the original Qwen3.8-Flash-Next and not Swift 1.5, and enabling it means the base model plus a hand-edited `user_args` entry. OrcaRouter Uncensored is the only officially documented uncensored model, but it is IQ3_XXS and text only.
+
+Verified before the switch: both SC117 shards match the Hugging Face LFS sizes and SHA-256 values (44,849,330,016 / `638fbd42...`, 38,699,929,024 / `091a4f6a...`), the mmproj is 907,543,520 bytes, and `strata launch --plan` identifies the abliterated files as "Swift 1.5 IQ3_S, your files" by GGUF header. Setup's own-file path warns on a size or SHA difference and uses a complete GGUF, which is the expected path for this build. Before the first start, delete the derived pack `/data/Strata-data/packs/swift-iq3_s` so it rebuilds against the new tensor offsets. Rollback to the censored build is `STRATA_MODEL_PATH=/models/swift-IQ3_S` plus the same pack deletion.
+
+Open: verify the refusal behavior and run the benchmark after the redeploy.
 
 ## Superseded decision (2026-10-20): hold — no engine change, 0.1.x or 0.2.x
 
