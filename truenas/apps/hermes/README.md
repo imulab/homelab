@@ -87,38 +87,41 @@ is already in the house snapshot tree.
 
 ### Model
 
-The dashboard Models page switches between configured providers, and the
-Config page edits the context window. The pinned dashboard has no form to
-create a custom endpoint, so register Strata once with the app CLI:
+Register the Strata endpoint in the dashboard. No container command is needed.
 
-```sh
-docker exec -it hermes hermes model
-```
+1. Add the API key. Open **Keys → Add custom key** in the dashboard:
 
-Choose `Custom endpoint (enter URL manually)`, then answer:
+   | Field | Value |
+   |---|---|
+   | Name | `HERMES_CUSTOM_STRATA_8080_API_KEY` |
+   | Value | the same `STRATA_API_KEY` as the Strata stack |
 
-| Prompt | Value |
-|---|---|
-| API base URL | `http://strata:8080/v1` |
-| API key | the same `STRATA_API_KEY` as the Strata stack |
-| API mode | `2` (Chat Completions) |
-| Model | accept the detected `swift-1.5-iq3_s` |
-| Context length | `262144` |
-| Display name | `Strata` |
+   The key goes to `/opt/data/.env`. That file is mode 600; the key does not go
+   in `config.yaml`.
 
-Then pin the two capabilities the wizard does not write on the main model
-block:
+2. Add the model. Open **Config → YAML** and replace the existing `model:` block
+   (it currently points at OpenRouter) with:
 
-```sh
-docker exec hermes hermes config set model.supports_vision true
-docker exec hermes hermes config set model.context_length 262144
-```
+   ```yaml
+   model:
+     default: "swift-1.5-iq3_s"
+     provider: "custom"
+     base_url: "http://strata:8080/v1"
+     api_key: "${HERMES_CUSTOM_STRATA_8080_API_KEY}"
+     api_mode: "chat_completions"
+     context_length: 262144
+     supports_vision: true
+   ```
 
-This writes the model block to `/opt/data/config.yaml`, the Strata key to
-`/opt/data/.env`, and a named custom provider entry so the endpoint appears in
-the Models picker later. No model setting lives in this repo or in Dockhand.
-New sessions read it. A new endpoint, base URL, or model id that the picker
-does not list re-runs `hermes model`.
+   Save the page. The YAML tab writes the whole `config.yaml`, so leave the rest
+   of the file as it is.
+
+3. New sessions use the model. The Models page lists the endpoint as
+   "Custom endpoint" and can switch back to it later. A changed endpoint, base
+   URL, or unlisted model id needs another edit here.
+
+The CLI equivalent is `docker exec -it hermes hermes model` if the dashboard is
+unreachable.
 
 ### Email
 
@@ -156,15 +159,20 @@ prefer the pin.
 # Endpoint and model from the app's own config
 docker exec hermes hermes config get model --json
 
+# The Strata key is in .env, not config.yaml
+docker exec hermes grep -c '^HERMES_CUSTOM_STRATA_8080_API_KEY=' /opt/data/.env   # expect 1
+
 # Email config is app data, not compose env
 # (remove any old EMAIL_* rows from the Dockhand panel first)
 docker exec hermes printenv EMAIL_ADDRESS   # expect no output
 docker exec hermes grep -c '^EMAIL_' /opt/data/.env   # expect 4 or more
+
 # Gateway came up healthy
 docker logs hermes 2>&1 | tail -40
 
 # Dashboard reachable and auth gate on (expect a login)
 #   https://hermes.absurdlab.dev
+# The Models page shows "custom · swift-1.5-iq3_s".
 
 # API server keyed (expect 401 without the key)
 curl -s -o /dev/null -w '%{http_code}\n' http://192.168.20.11:8642/v1/models
@@ -183,14 +191,23 @@ reboot the model and email settings are still present because they live in
 ## 7. Day 2
 
 - **Add a family user.** Append their address to `EMAIL_ALLOWED_USERS` on the
-  Channels page, then make them a regular user:
+  Channels page, then add the admin tier in **Config → YAML** under
+  `platforms.email`:
 
-  ```sh
-  docker exec hermes hermes config set platforms.email.extra.allow_admin_from '["operator@absurdlab.dev"]'
-  docker exec hermes hermes config set platforms.email.extra.user_allowed_commands '["status","model","usage"]'
+  ```yaml
+  platforms:
+    email:
+      enabled: true
+      extra:
+        allow_admin_from:
+          - operator@absurdlab.dev
+        user_allowed_commands:
+          - status
+          - model
+          - usage
   ```
 
-  Confirm the tier with `/whoami` from each address.
+  Save, then confirm the tier with `/whoami` from each address.
 
 - **Change the model.** Use the dashboard Models page for a model it lists. A
   new endpoint, base URL, or model id that the picker does not list re-runs
