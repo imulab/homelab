@@ -1,5 +1,11 @@
 # Hermes gateway → Strata custom endpoint (Dockhand compose)
 
+> **Update 2026-11-22.** Strata 0.2.17 now requires an API key on every `/v1`
+> request and serves the model as `swift-1.5-iq3_s`. The keyless Strata and
+> `<MODEL_ID>` statements below describe the 0.1.41 deployment this note was
+> written against. The current setup lives in `truenas/apps/hermes/README.md`
+> and is configured in the Hermes app.
+
 > Resolves wayfinder ticket #48. Compiled 2026-10-13 against the official
 > Hermes docs (hermes-agent.nousresearch.com) and this repo's own files
 > (`truenas/apps/README.md`, `truenas/apps/strata/{compose.yaml,.env.example,README.md}`,

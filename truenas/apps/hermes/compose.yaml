@@ -1,22 +1,27 @@
-# Hermes - Nous Research personal-agent gateway on the Strata Qwen3.8 endpoint.
+# Hermes, the Nous Research personal-agent gateway on the Strata Swift 1.5
+# endpoint.
 #
-# Stock image (no local Dockerfile): the official nousresearch/hermes-agent,
-# pinned by digest. The gateway is s6-supervised; a single /opt/data volume
+# Stock image, no local Dockerfile: the official nousresearch/hermes-agent,
+# pinned by digest. The gateway is s6-supervised. A single /opt/data volume
 # holds all state (config.yaml, .env, sessions, memories, skills).
 #
+# Model and email are configured in the Hermes app after the first Deploy, not
+# in this file. The dashboard and the container's `hermes` CLI write them to
+# /opt/data. This compose file only wires the deployment.
+#
 # The gateway reaches Strata container-to-container over the external proxy
-# network (http://strata:8080/v1), NOT through Caddy or DNS. The strata stack's
-# STRATA_ALLOWED_HOSTS must therefore also accept the container name `strata`
-# (see truenas/apps/strata/.env.example).
+# network (http://strata:8080/v1), not through Caddy or DNS. Strata 0.2.17
+# requires the API key on every /v1 request. Enter the same STRATA_API_KEY in
+# the app's model setup. The key is stored in /opt/data/.env.
 #
-# Surfaces (per grilling): email is the primary channel (configured via Dockhand
-# env below); the web dashboard (:9119) is served through Caddy at
-# hermes.absurdlab.dev; the OpenAI-compatible API server (:8642) is keyed and
-# bound to the LAN for future tools / desktop / mobile.
+# Surfaces: email is the primary channel, configured on the dashboard Channels
+# page. The web dashboard (:9119) is served through Caddy at
+# hermes.absurdlab.dev. The OpenAI-compatible API server (:8642) is keyed and
+# bound to the LAN for future tools, desktop, and mobile clients.
 #
-# Dashboard auth is mandatory on a non-loopback bind: Hermes fails closed at
-# startup if a dashboard auth provider is missing. The bundled username/password
-# provider satisfies it on a trusted LAN.
+# Dashboard auth is mandatory on a non-loopback bind. Hermes fails closed at
+# startup if a dashboard auth provider is missing. The bundled username and
+# password provider satisfies it on a trusted LAN.
 services:
   hermes:
     image: nousresearch/hermes-agent:rc.15-v0.21.7-amd64@sha256:3140cc382d3f21a18019d28a1f89efb2af21ae9f86364895ccc019c7c7f8a446
@@ -32,22 +37,14 @@ services:
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME:-operator}
       HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: "${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?required - set in Dockhand}"
       HERMES_DASHBOARD_BASIC_AUTH_SECRET: "${HERMES_DASHBOARD_BASIC_AUTH_SECRET:?required - set in Dockhand}"
-      # OpenAI-compatible API server (Open WebUI / desktop / mobile clients).
+      # OpenAI-compatible API server (Open WebUI, desktop, mobile clients).
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_PORT: "8642"
       API_SERVER_KEY: "${API_SERVER_KEY:?required - set in Dockhand}"
       API_SERVER_CORS_ORIGINS: ${HERMES_API_CORS_ORIGINS:-}
-      # Email channel (iCloud IMAP/SMTP). Secrets and the reach gate are set in
-      # Dockhand (key-icon for the secrets), not in /opt/data/.env.
-      EMAIL_ADDRESS: "${EMAIL_ADDRESS:?required - set in Dockhand}"
-      EMAIL_PASSWORD: "${EMAIL_PASSWORD:?required - set in Dockhand}"
-      EMAIL_IMAP_HOST: ${EMAIL_IMAP_HOST:-imap.mail.me.com}
-      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST:-smtp.mail.me.com}
-      EMAIL_IMAP_PORT: ${EMAIL_IMAP_PORT:-993}
-      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT:-587}
-      EMAIL_POLL_INTERVAL: ${EMAIL_POLL_INTERVAL:-15}
-      EMAIL_ALLOWED_USERS: "${EMAIL_ALLOWED_USERS:?required - set in Dockhand}"
+      # Model and email are absent on purpose. Configure them in the app. They
+      # are stored in /opt/data (config.yaml and .env), not as process env.
     ports:
       # Direct LAN fallback (house pattern). Caddy serves the canonical
       # https://hermes.absurdlab.dev dashboard route over the external proxy

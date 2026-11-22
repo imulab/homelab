@@ -1,5 +1,11 @@
 # Hermes Email channel, multi-user access, and secret placement under the Dockhand restart caveat
 
+> **Update 2026-11-22.** Strata 0.2.17 now requires an API key on every `/v1`
+> request. That key belongs in the model config stored in `/opt/data/.env`, not
+> in a Dockhand env var. The email design below is unchanged; the current setup
+> lives in `truenas/apps/hermes/README.md` and is configured on the dashboard
+> Channels page.
+
 > Resolves wayfinder ticket #49. Compiled 2026-10-13 by direct read of primary
 > sources — official Hermes docs (Messaging Gateway, Email Setup, the `openmail`
 > plugin catalog entry, Secrets, Docker Setup) and local decision #8 in
